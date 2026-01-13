@@ -1,0 +1,45 @@
+{% if product.selected_or_first_available_variant.available == false %}
+<style>
+.product-form__buttons, .shopify-payment-button { display:none !important; }
+#bis-btn { width:100%; padding:15px; background:black; color:white; }
+</style>
+
+<button id="bis-btn">Notify me when available</button>
+
+<div id="bis-modal" style="display:none;">
+  <input type="email" id="bis-email" placeholder="Enter your email">
+  <button id="bis-submit">Submit</button>
+</div>
+
+<script>
+document.getElementById("bis-btn").onclick = () => {
+  document.getElementById("bis-modal").style.display = "block";
+};
+
+document.getElementById("bis-submit").onclick = async () => {
+  const email = document.getElementById("bis-email").value;
+  const variantId = "{{ product.selected_or_first_available_variant.id }}";
+
+  await fetch("/apps/proxy/subscribe", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      email,
+      variantId,
+      shop: "{{ shop.permanent_domain }}"
+    })
+  });
+
+  alert("You will be notified!");
+};
+</script>
+{% endif %}
+
+
+{% schema %}
+{
+  "name": "Notify Me",
+  "target": "section"
+}
+{% endschema %}
+

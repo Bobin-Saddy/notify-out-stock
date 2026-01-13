@@ -1,0 +1,9 @@
+-- CreateTable
+CREATE TABLE "BackInStock" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "shop" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "variantId" TEXT NOT NULL,
+    "notified" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
