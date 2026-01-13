@@ -53,12 +53,10 @@ model Subscription {
 }
 
 model BackInStock {
-  id              Int      @id @default(autoincrement())
-  shop            String
-  email           String
-  variantId       String
-  inventoryItemId String?
-  notified        Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  shop      String
+  email     String
+  variantId String
+  notified  Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
-
