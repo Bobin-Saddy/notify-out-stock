@@ -1,6 +1,6 @@
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { sendEmail } from "./utils.mailer.server";
+import { sendEmail } from "./app.utils.mailer.server";
 
 export const action = async ({ request }) => {
   const { payload, session, admin } = await authenticate.webhook(request);
