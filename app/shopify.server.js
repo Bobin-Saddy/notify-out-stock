@@ -22,8 +22,9 @@ const shopify = shopifyApp({
 
   // ✅ ONLY THIS PART IS NEW
   webhooks: {
-    INVENTORY_LEVELS_UPDATE: {
-      path: "/webhooks/inventory-update",
+     INVENTORY_LEVELS_UPDATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/inventory-update",
     },
   },
 
