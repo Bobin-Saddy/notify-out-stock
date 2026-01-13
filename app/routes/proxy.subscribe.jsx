@@ -1,21 +1,6 @@
 import prisma from "../db.server";
 
-export const loader = async () => {
-  return new Response(
-    JSON.stringify({ ok: true, message: "Proxy route working" }),
-    { 
-      headers: { 
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type"
-      } 
-    }
-  );
-};
-
-export const action = async ({ request }) => {
-  // Handle preflight OPTIONS request
+export async function action({ request }) {
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -28,35 +13,14 @@ export const action = async ({ request }) => {
   }
 
   try {
-    if (request.method !== "POST") {
-      return new Response(
-        JSON.stringify({ success: false, error: "Method not allowed" }),
-        { 
-          status: 405, 
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          } 
-        }
-      );
-    }
-
     const body = await request.json();
-    console.log("Received body:", body); // Debug log
 
     if (!body.email || !body.variantId || !body.shop) {
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "Missing fields",
-          received: { email: !!body.email, variantId: !!body.variantId, shop: !!body.shop }
-        }),
+      return Response.json(
+        { success: false, error: "Missing fields" },
         { 
-          status: 400, 
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          } 
+          status: 400,
+          headers: { "Access-Control-Allow-Origin": "*" }
         }
       );
     }
@@ -69,23 +33,25 @@ export const action = async ({ request }) => {
       },
     });
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
-    });
+    return Response.json(
+      { success: true },
+      { headers: { "Access-Control-Allow-Origin": "*" } }
+    );
   } catch (err) {
-    console.error("SUBSCRIBE ERROR:", err);
-    return new Response(
-      JSON.stringify({ success: false, error: err.message }),
+    console.error("Error:", err);
+    return Response.json(
+      { success: false, error: err.message },
       { 
-        status: 500, 
-        headers: { 
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        } 
+        status: 500,
+        headers: { "Access-Control-Allow-Origin": "*" }
       }
     );
   }
-};
+}
+
+export async function loader() {
+  return Response.json(
+    { ok: true, message: "Subscribe endpoint" },
+    { headers: { "Access-Control-Allow-Origin": "*" } }
+  );
+}

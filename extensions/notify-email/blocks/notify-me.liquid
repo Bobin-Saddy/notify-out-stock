@@ -44,17 +44,15 @@
 
       console.log("Sending:", { email, variantId, shop });
 
-      const res = await fetch("/apps/notify-out-stock/proxy/subscribe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          email: email,
-          variantId: variantId,
-          shop: shop
-        })
-      });
+ const res = await fetch("/apps/notify-out-stock/subscribe", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: email,
+    variantId: variantId,
+    shop: shop
+  })
+});
 
       console.log("Response status:", res.status);
       

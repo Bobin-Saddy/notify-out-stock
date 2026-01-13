@@ -1,10 +1,16 @@
 client_id = "7dcaa4c0997790c99be62840f72b2ac8"
 name = "Restockly – Stock Alerts"
 application_url = "https://notify-out-stock-production.up.railway.app"
+
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
+
+[app_proxy]
+url = "https://notify-out-stock-production.up.railway.app"
+subpath = "notify-out-stock"
+prefix = "apps"
 
 [webhooks]
 api_version = "2026-04"
