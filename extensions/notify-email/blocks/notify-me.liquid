@@ -1,16 +1,16 @@
 {% if product.selected_or_first_available_variant.available == false %}
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
-#bis-btn { width:100%; padding:15px; background:black; color:white; cursor:pointer; border:none; }
-#bis-modal { margin-top: 15px; }
+#bis-btn { width:100%; padding:15px; background:black; color:white; cursor:pointer; border:none; border-radius: 5px; font-size: 16px; }
+#bis-modal { margin-top: 15px; padding: 20px; background: #f9f9f9; border-radius: 5px; }
 </style>
 
-<button id="bis-btn">Notify me when available</button>
+<button id="bis-btn">🔔 Notify me when available</button>
 
 <div id="bis-modal" style="display:none;">
-  <input type="email" id="bis-email" placeholder="Enter your email" style="width:100%;padding:10px;margin-bottom:10px;">
-  <button id="bis-submit" style="width:100%;padding:10px;background:green;color:white;border:none;cursor:pointer;">Submit</button>
-  <p id="bis-message" style="margin-top:10px;"></p>
+  <input type="email" id="bis-email" placeholder="Enter your email" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #ddd;border-radius:5px;">
+  <button id="bis-submit" style="width:100%;padding:12px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:5px;font-weight:bold;">Subscribe</button>
+  <p id="bis-message" style="margin-top:10px;font-size:14px;"></p>
 </div>
 
 <script>
@@ -29,54 +29,57 @@
     const email = emailInput.value.trim();
     
     if (!email || !email.includes("@")) {
-      message.textContent = "Please enter a valid email";
+      message.textContent = "❌ Please enter a valid email";
       message.style.color = "red";
       return;
     }
 
     submitBtn.disabled = true;
-    submitBtn.textContent = "Submitting...";
+    submitBtn.textContent = "Subscribing...";
     message.textContent = "";
 
     try {
-      const variantId = "{{ product.selected_or_first_available_variant.id }}";
+      const variantId = "{{ product.selected_or_first_available_variant.id }}".replace('gid://shopify/ProductVariant/', '');
       const shop = "{{ shop.permanent_domain }}";
+      const productName = "{{ product.title | escape }}";
 
-      console.log("Sending:", { email, variantId, shop });
+      console.log("Sending:", { email, variantId, shop, productName });
 
- const res = await fetch("/apps/notify-out-stock/subscribe", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    email: email,
-    variantId: variantId,
-    shop: shop
-  })
-});
+      const res = await fetch("/apps/notify-out-stock/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email,
+          variantId: variantId,
+          shop: shop,
+          productName: productName
+        })
+      });
 
-      console.log("Response status:", res.status);
-      
       const text = await res.text();
-      console.log("Response text:", text);
+      console.log("Response:", text);
       
       const data = text ? JSON.parse(text) : {};
 
       if (data.success) {
-        message.textContent = "✓ You'll be notified when back in stock!";
+        message.textContent = "✓ Subscribed! We'll email you when it's back in stock.";
         message.style.color = "green";
         emailInput.value = "";
-        setTimeout(() => { modal.style.display = "none"; }, 2000);
+        setTimeout(() => { 
+          modal.style.display = "none"; 
+          message.textContent = "";
+        }, 3000);
       } else {
-        message.textContent = "Error: " + (data.error || "Unknown error");
+        message.textContent = "❌ " + (data.error || "Something went wrong");
         message.style.color = "red";
       }
     } catch (err) {
-      console.error("Fetch error:", err);
-      message.textContent = "Network error. Please try again.";
+      console.error("Error:", err);
+      message.textContent = "❌ Network error. Please try again.";
       message.style.color = "red";
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = "Submit";
+      submitBtn.textContent = "Subscribe";
     }
   };
 })();

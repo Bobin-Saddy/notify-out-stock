@@ -18,7 +18,6 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   console.log("POST Request to proxy:", request.url, request.method);
 
-  // Handle preflight OPTIONS request
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -38,12 +37,6 @@ export const action = async ({ request }) => {
     console.log("Parsed body:", body);
 
     if (!body.email || !body.variantId || !body.shop) {
-      console.log("Missing fields:", { 
-        email: !!body.email, 
-        variantId: !!body.variantId, 
-        shop: !!body.shop 
-      });
-      
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -60,11 +53,40 @@ export const action = async ({ request }) => {
       );
     }
 
-    const subscription = await prisma.backInStock.create({
-      data: {
-        email: body.email,
+    // Check if already subscribed
+    const existing = await prisma.subscription.findFirst({
+      where: {
+        customerEmail: body.email,
         variantId: String(body.variantId),
-        shop: body.shop,
+        shopDomain: body.shop,
+        status: "pending"
+      }
+    });
+
+    if (existing) {
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Already subscribed",
+          alreadyExists: true 
+        }), 
+        {
+          status: 200,
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        }
+      );
+    }
+
+    const subscription = await prisma.subscription.create({
+      data: {
+        customerEmail: body.email,
+        variantId: String(body.variantId),
+        shopDomain: body.shop,
+        productName: body.productName || null,
+        status: "pending"
       },
     });
 
