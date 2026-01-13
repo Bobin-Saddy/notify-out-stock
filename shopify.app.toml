@@ -1,17 +1,24 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
 client_id = "7dcaa4c0997790c99be62840f72b2ac8"
 name = "Restockly – Stock Alerts"
 application_url = "https://notify-out-stock-production.up.railway.app"
-
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
 
+# ================================
+# 🔁 APP PROXY (Storefront → App)
+# ================================
 [app_proxy]
 url = "https://notify-out-stock-production.up.railway.app"
 subpath = "notify-out-stock"
 prefix = "apps"
 
+# ================================
+# 🔔 WEBHOOKS
+# ================================
 [webhooks]
 api_version = "2026-04"
 
@@ -23,12 +30,21 @@ api_version = "2026-04"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
+  # 🔥 THIS IS THE IMPORTANT ONE FOR RESTOCK
   [[webhooks.subscriptions]]
   topics = [ "inventory_levels/update" ]
   uri = "/webhooks/inventory-update"
 
+# ================================
+# 🔐 API PERMISSIONS
+# ================================
 [access_scopes]
 scopes = "write_products,read_products,read_inventory"
 
+# ================================
+# 🔑 AUTH CALLBACK
+# ================================
 [auth]
-redirect_urls = [ "https://notify-out-stock-production.up.railway.app/auth/callback" ]
+redirect_urls = [
+  "https://notify-out-stock-production.up.railway.app/auth/callback"
+]

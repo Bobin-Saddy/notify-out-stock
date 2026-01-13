@@ -45,7 +45,7 @@
 
       console.log("Sending:", { email, variantId, shop, productName });
 
-      const res = await fetch("/apps/notify-out-stock/subscribe", {
+      const res = await fetch("/apps/notify-out-stock/proxy/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
