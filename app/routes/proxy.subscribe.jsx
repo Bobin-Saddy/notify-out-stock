@@ -1,36 +1,46 @@
 import prisma from "../db.server";
 
+export const loader = async () => {
+  return new Response(
+    JSON.stringify({ ok: true, message: "Proxy route working" }),
+    { headers: { "Content-Type": "application/json" } }
+  );
+};
+
 export const action = async ({ request }) => {
   try {
+    if (request.method !== "POST") {
+      return new Response(
+        JSON.stringify({ success: false, error: "Method not allowed" }),
+        { status: 405, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const body = await request.json();
 
-    const { email, variantId, shop } = body;
-
-    if (!email || !variantId || !shop) {
-      return new Response(JSON.stringify({ success: false, message: "Missing data" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (!body.email || !body.variantId || !body.shop) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Missing fields" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     await prisma.backInStock.create({
       data: {
-        email,
-        variantId: String(variantId),
-        shop,
+        email: body.email,
+        variantId: String(body.variantId),
+        shop: body.shop,
       },
     });
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { "Content-Type": "application/json" },
     });
-
   } catch (err) {
     console.error("SUBSCRIBE ERROR:", err);
-
-    return new Response(JSON.stringify({ success: false, error: err.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ success: false, error: err.message }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 };
