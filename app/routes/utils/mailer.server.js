@@ -1,18 +1,20 @@
 import nodemailer from "nodemailer";
 
-export const sendEmail = async (to, subject, text) => {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.MAIL_USER,
-      pass: process.env.MAIL_PASS,
-    },
-  });
+const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
+export async function sendMail({ to, subject, html }) {
   await transporter.sendMail({
-    from: `"Stock Alerts" <${process.env.MAIL_USER}>`,
+    from: `"Restock Alert" <${process.env.SMTP_USER}>`,
     to,
     subject,
-    text,
+    html,
   });
-};
+}
