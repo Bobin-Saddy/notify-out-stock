@@ -1,8 +1,5 @@
 import prisma from "../db.server";
 
-/**
- * This handles GET request (when you open in browser)
- */
 export const loader = async () => {
   return new Response(
     JSON.stringify({ ok: true, message: "Proxy route working" }),
@@ -10,9 +7,6 @@ export const loader = async () => {
   );
 };
 
-/**
- * This handles POST request (from Shopify storefront)
- */
 export const action = async ({ request }) => {
   try {
     if (request.method !== "POST") {
@@ -43,8 +37,7 @@ export const action = async ({ request }) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("PROXY SUBSCRIBE ERROR:", err);
-
+    console.error("SUBSCRIBE ERROR:", err);
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
       { status: 500, headers: { "Content-Type": "application/json" } }
