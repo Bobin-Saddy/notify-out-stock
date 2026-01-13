@@ -1,48 +1,91 @@
 import prisma from "../db.server";
 
-/**
- * Receives:
- * - email
- * - variantId
- * - shop
- * Converts variant → inventory_item_id
- * Saves subscription
- */
-export async function action({ request }) {
-  try {
-    const { email, variantId, shop } = await request.json();
+export const loader = async ({ request }) => {
+  console.log("PROXY LOADER HIT:", request.method, request.url);
+  
+  return new Response(
+    JSON.stringify({ ok: true, message: "Proxy route working" }),
+    { 
+      status: 200,
+      headers: { 
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+      } 
+    }
+  );
+};
 
-    if (!email || !variantId || !shop) {
-      return Response.json({ success: false, error: "Missing fields" }, { status: 400 });
+export const action = async ({ request }) => {
+  console.log("PROXY ACTION HIT:", request.method, request.url);
+
+  // Handle preflight
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
+    });
+  }
+
+  try {
+    const body = await request.json();
+    console.log("Received body:", body);
+
+    if (!body.email || !body.variantId || !body.shop) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: "Missing required fields",
+          received: body
+        }),
+        { 
+          status: 400, 
+          headers: { 
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          } 
+        }
+      );
     }
 
-    // 🔁 Get inventory_item_id from Shopify
-    const res = await fetch(
-      `https://${shop}/admin/api/2024-10/variants/${variantId}.json`,
-      {
-        headers: {
-          "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_TOKEN,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    const data = await res.json();
-
-    const inventoryItemId = String(data.variant.inventory_item_id);
-
-    // 💾 Save to DB
-    await prisma.backInStock.create({
+    const subscription = await prisma.backInStock.create({
       data: {
-        email,
-        shop,
-        inventoryItemId,
+        email: body.email,
+        variantId: String(body.variantId),
+        shop: body.shop,
       },
     });
 
-    return Response.json({ success: true });
+    console.log("Created subscription:", subscription);
+
+    return new Response(
+      JSON.stringify({ success: true, data: subscription }), 
+      {
+        status: 200,
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*"
+        }
+      }
+    );
   } catch (err) {
-    console.error("Subscribe error:", err);
-    return Response.json({ success: false, error: "Server error" }, { status: 500 });
+    console.error("SUBSCRIBE ERROR:", err);
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: err.message,
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      }),
+      { 
+        status: 500, 
+        headers: { 
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*"
+        } 
+      }
+    );
   }
-}
+};
