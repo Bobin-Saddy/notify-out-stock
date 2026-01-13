@@ -11,5 +11,7 @@ export const action = async ({ request }) => {
     },
   });
 
-  return new Response(JSON.stringify({ success: true }));
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { "Content-Type": "application/json" },
+  });
 };
