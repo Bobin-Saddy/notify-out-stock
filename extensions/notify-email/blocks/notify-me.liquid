@@ -2,7 +2,6 @@
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
 #bis-btn { width:100%; padding:15px; background:black; color:white; cursor:pointer; }
-#bis-modal { margin-top:10px; }
 </style>
 
 <button id="bis-btn">Notify me when available</button>
@@ -21,12 +20,7 @@ document.getElementById("bis-submit").onclick = async () => {
   const email = document.getElementById("bis-email").value;
   const variantId = "{{ product.selected_or_first_available_variant.id }}";
 
-  if(!email){
-    alert("Please enter email");
-    return;
-  }
-
-  const res = await fetch("/app/proxy/subscribe", {
+  const res = await fetch("/apps/notify-out-stock/proxy/subscribe", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
@@ -39,13 +33,14 @@ document.getElementById("bis-submit").onclick = async () => {
   const data = await res.json();
 
   if(data.success){
-    alert("You will be notified when product is back in stock!");
-  }else{
-    alert("Something went wrong!");
+    alert("Registered successfully!");
+  } else {
+    alert("Error occurred!");
   }
 };
 </script>
 {% endif %}
+
 
 {% schema %}
 {
