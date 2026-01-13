@@ -9,9 +9,9 @@ export const action = async ({ request }) => {
       data: { email, variantId: String(variantId), shop },
     });
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
+  return new Response(JSON.stringify({ success: true, test: "route working" }), {
+    headers: { "Content-Type": "application/json" },
+  });
   } catch (err) {
     return new Response(JSON.stringify({ success: false }), {
       status: 500,
