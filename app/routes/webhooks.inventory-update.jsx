@@ -1,53 +1,58 @@
 import prisma from "../db.server";
-import { sendMail } from "./utils/mailer.server"; // we'll create this
+import nodemailer from "nodemailer";
 
-export const action = async ({ request }) => {
+export async function action({ request }) {
   try {
     const payload = await request.json();
 
-    const inventoryItemId = payload.inventory_item_id;
+    const inventoryItemId = String(payload.inventory_item_id);
     const available = payload.available;
 
-    // Only trigger when stock becomes available
+    // Only when product becomes IN STOCK
     if (available <= 0) {
-      return new Response("OK");
+      return new Response("Ignored", { status: 200 });
     }
 
-    // Find all variants mapped to this inventory item
-    // If you're storing variantId directly, we assume variantId === inventory_item_id
-    const subscriptions = await prisma.backInStock.findMany({
-      where: {
-        variantId: String(inventoryItemId),
+    // 🔍 Find all subscribers
+    const subscribers = await prisma.backInStock.findMany({
+      where: { inventoryItemId },
+    });
+
+    if (!subscribers.length) {
+      return new Response("No subscribers", { status: 200 });
+    }
+
+    // 📧 Email setup
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
       },
     });
 
-    if (!subscriptions.length) {
-      return new Response("No subscribers");
-    }
-
-    // Send emails
-    for (const sub of subscriptions) {
-      await sendMail({
+    // 📤 Send emails
+    for (const sub of subscribers) {
+      await transporter.sendMail({
+        from: `"Restock Alert" <${process.env.EMAIL_USER}>`,
         to: sub.email,
-        subject: "Product is back in stock! 🎉",
+        subject: "🎉 Product is back in stock!",
         html: `
           <h2>Good news!</h2>
-          <p>Your product is back in stock.</p>
-          <a href="https://${sub.shop}">Buy now</a>
+          <p>The product you were waiting for is now back in stock.</p>
+          <p>Visit the store to buy it now!</p>
         `,
       });
     }
 
-    // Delete entries after sending
+    // 🧹 Delete subscriptions after sending
     await prisma.backInStock.deleteMany({
-      where: {
-        variantId: String(inventoryItemId),
-      },
+      where: { inventoryItemId },
     });
 
-    return new Response("Emails sent");
+    return new Response("OK", { status: 200 });
   } catch (err) {
-    console.error("WEBHOOK ERROR:", err);
-    return new Response("Error", { status: 500 });
+    console.error("Webhook error:", err);
+    return new Response("Server error", { status: 500 });
   }
-};
+}
