@@ -1,6 +1,6 @@
-import { authenticate } from "./shopify.server";
-import prisma from "./db.server";
-import { sendBackInStockEmail } from "./routes/utils/email.server";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+import { sendBackInStockEmail } from "./utils/email.server";
 
 export const action = async ({ request }) => {
   try {
@@ -16,7 +16,11 @@ export const action = async ({ request }) => {
     console.log(`🔍 Found ${variants.length} variants to check`);
 
     for (const variant of variants) {
-      const variantId = String(variant.id).replace('gid://shopify/ProductVariant/', '');
+      const variantId = String(variant.id); 
+  
+  // Use payload.handle for the URL, but ensure variant.id is just the number
+  const cleanVariantId = variantId.replace('gid://shopify/ProductVariant/', '');
+  const productUrl = `https://${shop}/products/${payload.handle}?variant=${cleanVariantId}`;
       
       console.log(`\n━━━ Variant ${variantId} ━━━`);
       console.log(`🏷️  Title: ${variant.title}`);
