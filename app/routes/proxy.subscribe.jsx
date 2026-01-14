@@ -4,7 +4,7 @@ export const loader = async ({ request }) => {
   console.log("PROXY LOADER HIT:", request.method, request.url);
   
   return new Response(
-    JSON.stringify({ ok: true, message: "Proxy routes working" }),
+    JSON.stringify({ ok: true, message: "Proxy route working" }),
     { 
       status: 200,
       headers: { 
