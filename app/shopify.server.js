@@ -103,10 +103,18 @@ const shopify = shopifyApp({
     },
   },
 
-  webhooks: {
+webhooks: {
+    APP_UNINSTALLED: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/app/uninstalled",
+    },
+    INVENTORY_LEVELS_UPDATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks/inventory-update",
+    },
     PRODUCTS_UPDATE: {
       deliveryMethod: "http",
-      callbackUrl: "/webhooks/products-update", // ✅ Keep leading slash here
+      callbackUrl: "/webhooks/products-update",
     },
   },
 
