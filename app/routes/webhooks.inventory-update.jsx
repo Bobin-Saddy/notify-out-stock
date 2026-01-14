@@ -17,7 +17,7 @@ export async function action({ request }) {
     const subscribers = await prisma.backInStock.findMany({
       where: { inventoryItemId },
     });
-
+console.log("Subscribers:", subscribers);
     if (!subscribers.length) {
       return new Response("No subscribers", { status: 200 });
     }
