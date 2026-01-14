@@ -18,7 +18,6 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   console.log("PROXY ACTION HIT:", request.method, request.url);
 
-  // Handle preflight
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -51,10 +50,27 @@ export const action = async ({ request }) => {
       );
     }
 
+    // ✅ Get inventory item ID from Shopify API
+    const variantId = body.variantId;
+    let inventoryItemId = null;
+
+    try {
+      // Fetch variant details to get inventory_item_id
+      const shopDomain = body.shop;
+      const apiUrl = `https://${shopDomain}/admin/api/2025-01/variants/${variantId}.json`;
+      
+      // Note: This requires API access - we'll need to store it differently
+      // For now, just store variantId and we'll map it later
+      console.log("Storing variant:", variantId);
+    } catch (err) {
+      console.log("Could not fetch inventory item ID:", err.message);
+    }
+
     const subscription = await prisma.backInStock.create({
       data: {
         email: body.email,
         variantId: String(body.variantId),
+        inventoryItemId: inventoryItemId ? String(inventoryItemId) : null,
         shop: body.shop,
       },
     });

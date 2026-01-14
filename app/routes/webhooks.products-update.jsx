@@ -6,84 +6,98 @@ export const action = async ({ request }) => {
   try {
     const { shop, payload, topic } = await authenticate.webhook(request);
     
-    console.log("📦 Webhook received:", topic);
+    console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("📦 WEBHOOK RECEIVED");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("🏪 Shop:", shop);
-    console.log("📦 Product:", payload.title);
-
-    // Get all variants from the product
-    const variants = payload.variants || [];
-
-    for (const variant of variants) {
-      // ✅ Clean variant ID - ye wahi ID hai jo form submit karte waqt save hoti hai
-      const variantId = String(variant.id).replace('gid://shopify/ProductVariant/', '');
-      
-      console.log(`\n🔍 Checking Variant ID: ${variantId}`);
-      console.log(`📊 Inventory: ${variant.inventory_quantity}`);
-      console.log(`🏷️ Title: ${variant.title}`);
-
-      // ✅ Check if variant is NOW in stock
-      if (variant.inventory_quantity > 0) {
-        console.log(`✅ Variant ${variantId} is IN STOCK!`);
-        
-        // ✅ Find unnotified subscribers using variantId (NOT inventoryItemId)
-        const subscribers = await prisma.backInStock.findMany({
-          where: {
-            variantId: variantId,  // ✅ Correct field name
-            shop: shop,
-            notified: false,
-          },
-        });
-        console.log("Subscribers:", subscribers);
-
-        console.log(`📧 Found ${subscribers.length} subscribers for variant ${variantId}`);
-
-        if (subscribers.length === 0) {
-          console.log(`ℹ️ No subscribers found for variant ${variantId}`);
-          continue;
-        }
-
-        // Send emails to all subscribers
-        for (const subscriber of subscribers) {
-          try {
-            const productUrl = `https://${shop}/products/${payload.handle}?variant=${variant.id}`;
-            
-            console.log(`📧 Sending email to: ${subscriber.email}`);
-            
-            await sendBackInStockEmail(
-              subscriber.email,
-              payload.title,
-              variant.title,
-              productUrl,
-              shop
-            );
-
-            // Mark as notified
-            await prisma.backInStock.update({
-              where: { id: subscriber.id },
-              data: { notified: true },
-            });
-
-            console.log(`✅ Successfully notified: ${subscriber.email}`);
-          } catch (emailError) {
-            console.error(`❌ Email failed for ${subscriber.email}:`, emailError.message);
-          }
-        }
-      } else {
-        console.log(`⚠️ Variant ${variantId} is still OUT of stock (Qty: ${variant.inventory_quantity})`);
-      }
+    console.log("📋 Topic:", topic);
+    console.log("📦 Payload:", JSON.stringify(payload, null, 2));
+    
+    // Check what inventory item IDs are in the payload
+    if (payload.inventory_item_id) {
+      console.log("🔢 Inventory Item ID:", payload.inventory_item_id);
+    }
+    
+    if (payload.id) {
+      console.log("🔢 Inventory Level ID:", payload.id);
     }
 
-    return new Response(JSON.stringify({ success: true, message: "Webhook processed" }), {
+    // Get the inventory item ID from webhook
+    const inventoryItemId = String(payload.inventory_item_id || payload.id);
+    
+    console.log("\n🔍 SEARCHING FOR SUBSCRIBERS:");
+    console.log("Looking for inventoryItemId:", inventoryItemId);
+
+    // First, let's see ALL subscribers in database
+    const allSubscribers = await prisma.backInStock.findMany({
+      where: {
+        shop: shop,
+        notified: false,
+      },
+    });
+    
+    console.log("\n📊 ALL UNNOTIFIED SUBSCRIBERS:", allSubscribers);
+
+    // Now try to find by inventory item ID
+    const subscribersByInventory = await prisma.backInStock.findMany({
+      where: {
+        inventoryItemId: inventoryItemId,
+        shop: shop,
+        notified: false,
+      },
+    });
+
+    console.log(`\n📧 Subscribers found: ${subscribersByInventory.length}`);
+
+    if (subscribersByInventory.length === 0) {
+      console.log("⚠️ No subscribers found for this inventory item");
+      console.log("💡 TIP: Check if variantId is being stored instead of inventoryItemId");
+    }
+
+    // Check if inventory is now available
+    const available = payload.available || 0;
+    console.log(`\n📊 Available quantity: ${available}`);
+
+    if (available > 0) {
+      console.log("✅ Product is IN STOCK!");
+      
+      for (const subscriber of subscribersByInventory) {
+        try {
+          console.log(`\n📧 Sending email to: ${subscriber.email}`);
+          
+          // We need to get product details - for now using generic message
+          await sendBackInStockEmail(
+            subscriber.email,
+            "Product", // We'll need to fetch this
+            "Default",
+            `https://${shop}`,
+            shop
+          );
+
+          await prisma.backInStock.update({
+            where: { id: subscriber.id },
+            data: { notified: true },
+          });
+
+          console.log(`✅ Successfully notified: ${subscriber.email}`);
+        } catch (emailError) {
+          console.error(`❌ Email failed:`, emailError.message);
+        }
+      }
+    } else {
+      console.log("⚠️ Product is still OUT of stock");
+    }
+
+    console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+    return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
     
   } catch (error) {
-    console.error("❌ Webhook processing error:", error);
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
-    }), {
+    console.error("❌ Webhook error:", error);
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
