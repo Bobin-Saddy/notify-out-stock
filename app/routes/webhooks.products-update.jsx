@@ -4,30 +4,28 @@ import { sendBackInStockEmail } from "./utils/email.server";
 
 export const action = async ({ request }) => {
   try {
+    // 1. Authenticate the webhook
     const { shop, payload, topic } = await authenticate.webhook(request);
     
-    console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("📦 PRODUCTS_UPDATE WEBHOOK RECEIVED");
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("🏪 Shop:", shop);
-    console.log("📦 Product:", payload.title);
+    // 2. Log receipt
+    console.log(`\n📦 Webhook Received: ${topic} for ${shop}`);
+
+    // Optional: Filter for specific topic if needed
+    if (topic !== "PRODUCTS_UPDATE") {
+      return new Response("Topic not handled", { status: 200 });
+    }
 
     const variants = payload.variants || [];
-    console.log(`🔍 Found ${variants.length} variants to check`);
 
     for (const variant of variants) {
-      const variantId = String(variant.id); 
-  
-  // Use payload.handle for the URL, but ensure variant.id is just the number
-  const cleanVariantId = variantId.replace('gid://shopify/ProductVariant/', '');
-  const productUrl = `https://${shop}/products/${payload.handle}?variant=${cleanVariantId}`;
+      // Standardize the ID: Remove GID prefix if present and convert to string
+      const variantId = String(variant.id).replace('gid://shopify/ProductVariant/', '');
       
-      console.log(`\n━━━ Variant ${variantId} ━━━`);
-      console.log(`🏷️  Title: ${variant.title}`);
-      console.log(`📊 Inventory: ${variant.inventory_quantity}`);
+      // Construct the clean Product URL
+      const productUrl = `https://${shop}/products/${payload.handle}?variant=${variantId}`;
 
+      // 3. Only trigger if inventory is back in stock
       if (variant.inventory_quantity > 0) {
-        console.log(`✅ IN STOCK!`);
         
         const subscribers = await prisma.backInStock.findMany({
           where: {
@@ -37,49 +35,40 @@ export const action = async ({ request }) => {
           },
         });
 
-        console.log(`📧 Found ${subscribers.length} subscribers`);
+        if (subscribers.length > 0) {
+          console.log(`📧 Found ${subscribers.length} subscribers for ${variant.title}`);
 
-        for (const subscriber of subscribers) {
-          try {
-            const productUrl = `https://${shop}/products/${payload.handle}?variant=${variant.id}`;
-            
-            console.log(`📧 Sending to: ${subscriber.email}`);
-            
-            await sendBackInStockEmail(
-              subscriber.email,
-              payload.title,
-              variant.title,
-              productUrl,
-              shop
-            );
+          for (const subscriber of subscribers) {
+            try {
+              await sendBackInStockEmail(
+                subscriber.email,
+                payload.title,
+                variant.title,
+                productUrl,
+                shop
+              );
 
-            await prisma.backInStock.update({
-              where: { id: subscriber.id },
-              data: { notified: true },
-            });
+              // 4. Mark as notified immediately to prevent double emails
+              await prisma.backInStock.update({
+                where: { id: subscriber.id },
+                data: { notified: true },
+              });
 
-            console.log(`✅ Notified: ${subscriber.email}`);
-          } catch (emailError) {
-            console.error(`❌ Email failed:`, emailError.message);
+              console.log(`✅ Notified: ${subscriber.email}`);
+            } catch (emailError) {
+              console.error(`❌ Email failed for ${subscriber.email}:`, emailError.message);
+            }
           }
         }
-      } else {
-        console.log(`⚠️  Still OUT of stock`);
       }
     }
 
-    console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(null, { status: 200 });
     
   } catch (error) {
-    console.error("❌ Webhook error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    console.error("❌ Webhook error:", error.message);
+    // Always return a 200 if the webhook was received but the logic failed 
+    // to prevent Shopify from retrying indefinitely, OR return 500 if you want a retry.
+    return new Response(null, { status: 500 });
   }
 };
