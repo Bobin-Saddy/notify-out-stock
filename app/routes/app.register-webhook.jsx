@@ -28,7 +28,7 @@ export const loader = async ({ request }) => {
         variables: {
           topic: "PRODUCTS_UPDATE",
           webhookSubscription: {
-            callbackUrl: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
+            callbackUrl: `${process.env.SHOPIFY_APP_URL}webhooks/products-update`,
             format: "JSON"
           }
         }
