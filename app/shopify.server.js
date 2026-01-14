@@ -63,7 +63,7 @@ webhooks: {
   PRODUCTS_UPDATE: {
     deliveryMethod: "http",
     // ✅ No leading slash
-    callbackUrl: "webhooks/products-update",
+    callbackUrl: "/webhooks/products-update",
   },
 },
 
