@@ -24,6 +24,7 @@ export const action = async ({ request }) => {
 
     // Get the inventory item ID from webhook
     const inventoryItemId = String(payload.inventory_item_id || payload.id);
+    console.log(shop, inventoryItemId)
     
     console.log("\n🔍 SEARCHING FOR SUBSCRIBERS:");
     console.log("Looking for inventoryItemId:", inventoryItemId);

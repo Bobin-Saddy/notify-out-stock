@@ -26,26 +26,22 @@ const shopify = shopifyApp({
       console.log("🔗 Registering webhooks for shop:", session.shop);
       
       try {
-        // Register PRODUCTS_UPDATE webhook
-        const response = await admin.rest.post({
-          path: 'webhooks',
-          data: {
-            webhook: {
-              topic: 'products/update',
-              address: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
-              format: 'json'
-            }
-          }
+        // Register PRODUCTS_UPDATE webhook (NOT inventory_levels_update)
+        await admin.rest.resources.Webhook.create({
+          session: session,
+          topic: "products/update",
+          address: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
+          format: "json",
         });
         
-        console.log("✅ Webhook registered:", response);
+        console.log("✅ products/update webhook registered");
       } catch (error) {
         console.error("❌ Webhook registration failed:", error);
       }
     },
   },
 
-  // ✅ Define webhooks
+  // ✅ Define PRODUCTS_UPDATE webhook
   webhooks: {
     PRODUCTS_UPDATE: {
       deliveryMethod: "http",
