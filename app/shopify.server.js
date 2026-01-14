@@ -44,7 +44,7 @@ hooks: {
             topic: "PRODUCTS_UPDATE",
             webhookSubscription: {
               // ✅ Single slash, no leading slash
-              callbackUrl: `${process.env.SHOPIFY_APP_URL}/routes/webhooks.products-update`,
+              callbackUrl: `${process.env.SHOPIFY_APP_URL}/routes/webhooks/products-update`,
               format: "JSON"
             }
           }
@@ -63,7 +63,7 @@ webhooks: {
   PRODUCTS_UPDATE: {
     deliveryMethod: "http",
     // ✅ No leading slash
-    callbackUrl: "/routes/webhooks.products-update",
+    callbackUrl: "/routes/webhooks/products-update",
   },
 },
 
@@ -71,7 +71,7 @@ webhooks: {
   webhooks: {
     PRODUCTS_UPDATE: {
       deliveryMethod: "http",
-      callbackUrl: "/routes/webhooks.products-update",
+      callbackUrl: "/routes/webhooks/products-update",
     },
   },
 
