@@ -1,84 +1,69 @@
 import prisma from "../db.server";
-import nodemailer from "nodemailer";
 
 export async function action({ request }) {
   try {
     const payload = await request.json();
-    
-    // Shopify inventory webhook sends inventory_item_id
     const inventoryItemId = String(payload.inventory_item_id);
     const available = payload.available;
 
-    console.log(`📦 Inventory Update Received: Item ${inventoryItemId}, Qty: ${available}`);
+    console.log(`📦 Inventory Update: Item ${inventoryItemId}, Qty: ${available}`);
 
-    // Only proceed if stock is back (available > 0)
     if (available <= 0) {
-      return new Response("Ignored: Still out of stock", { status: 200 });
+      return new Response("Ignored", { status: 200 });
     }
 
-    // 🔍 Find subscribers
-    // NOTE: Make sure your DB has inventoryItemId. 
-    // If not, you might need to find by variantId.
     const subscribers = await prisma.backInStock.findMany({
       where: { 
-        OR: [
-          { inventoryItemId: inventoryItemId },
-          // { variantId: some_variant_id } // Optional fallback
-        ],
+        inventoryItemId: inventoryItemId,
         notified: false 
       },
     });
 
-    console.log("Subscribers found:", subscribers.length);
-
     if (subscribers.length === 0) {
-      return new Response("No subscribers to notify", { status: 200 });
+      return new Response("No subscribers", { status: 200 });
     }
 
-    // 📧 Email setup (Using 587 for better cloud compatibility)
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS, 
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
-
-    // 📤 Send emails
+    // 📤 Send emails via Resend API
     for (const sub of subscribers) {
       try {
-        await transporter.sendMail({
-          from: `"Restock Alert" <${process.env.MAIL_USER}>`,
-          to: sub.email,
-          subject: "🎉 Product is back in stock!",
-          html: `
-            <div style="font-family: sans-serif; padding: 20px;">
-              <h2>Good news!</h2>
-              <p>The product you were waiting for is now back in stock.</p>
-              <p>Shop: <strong>${sub.shop}</strong></p>
-              <p><a href="https://${sub.shop}" style="padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 5px;">Visit Store</a></p>
-            </div>
-          `,
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'Restock Alert <onboarding@resend.dev>',
+            to: sub.email,
+            subject: '🎉 Product is back in stock!',
+            html: `
+              <div style="font-family: sans-serif; padding: 20px;">
+                <h2>Good news!</h2>
+                <p>The product you were waiting for is now back in stock at <strong>${sub.shop}</strong>.</p>
+                <a href="https://${sub.shop}" style="background: #000; color: #fff; padding: 10px 20px; text-decoration: none;">Shop Now</a>
+              </div>
+            `
+          })
         });
 
-        // Mark as notified instead of deleting immediately (safer)
-        await prisma.backInStock.update({
-          where: { id: sub.id },
-          data: { notified: true }
-        });
-
-        console.log(`✅ Email sent to ${sub.email}`);
-      } catch (emailErr) {
-        console.error(`❌ Failed for ${sub.email}:`, emailErr.message);
+        if (res.ok) {
+          await prisma.backInStock.update({
+            where: { id: sub.id },
+            data: { notified: true }
+          });
+          console.log(`✅ Email sent via Resend to: ${sub.email}`);
+        } else {
+          const errorData = await res.json();
+          console.error("❌ Resend API Error:", errorData);
+        }
+      } catch (err) {
+        console.error("❌ Fetch Error:", err.message);
       }
     }
 
     return new Response("OK", { status: 200 });
   } catch (err) {
-    console.error("Webhook logic error:", err);
-    return new Response("Server error", { status: 500 });
+    console.error("Webhook error:", err);
+    return new Response("Error", { status: 500 });
   }
 }
