@@ -51,7 +51,7 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false,
     minVersion: "TLSv1.2"
   },
-  connectionTimeout: 20000, // Increase to 20 seconds
+  connectionTimeout: 120000, // Increase to 20 seconds
 });
 
     // 📤 Send emails
