@@ -1,107 +1,67 @@
 import prisma from "../db.server";
+import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-  console.log("PROXY LOADER HIT:", request.method, request.url);
-  
-  return new Response(
-    JSON.stringify({ ok: true, message: "Proxy route working" }),
-    { 
-      status: 200,
-      headers: { 
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      } 
-    }
-  );
+  return new Response(JSON.stringify({ ok: true }), { status: 200 });
 };
 
 export const action = async ({ request }) => {
-  console.log("PROXY ACTION HIT:", request.method, request.url);
+  console.log("PROXY ACTION HIT");
 
+  // Handle CORS for local testing if necessary
   if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type"
-      }
-    });
+    return new Response(null, { status: 204 });
   }
 
   try {
+    // 1. Authenticate the App Proxy request
+    // This gives us the 'admin' object to make GraphQL calls
+    const { admin } = await authenticate.public.appProxy(request);
+    
     const body = await request.json();
-    console.log("Received body:", body);
+    const { email, variantId, shop } = body;
 
-    if (!body.email || !body.variantId || !body.shop) {
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "Missing required fields",
-          received: body
-        }),
-        { 
-          status: 400, 
-          headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          } 
+    if (!email || !variantId || !shop) {
+      return new Response(JSON.stringify({ error: "Missing fields" }), { status: 400 });
+    }
+
+    // 2. Fetch the Inventory Item ID using GraphQL
+    // This is much faster than the REST variants.json endpoint
+    const response = await admin.graphql(`
+      query {
+        productVariant(id: "gid://shopify/ProductVariant/${variantId}") {
+          inventoryItem {
+            id
+          }
         }
-      );
-    }
+      }
+    `);
 
-    // ✅ Get inventory item ID from Shopify API
-    const variantId = body.variantId;
-    let inventoryItemId = null;
+    const variantData = await response.json();
+    
+    // Extract the clean numeric ID from the GID (e.g., gid://shopify/InventoryItem/12345 -> 12345)
+    const rawInventoryId = variantData.data?.productVariant?.inventoryItem?.id;
+    const inventoryItemId = rawInventoryId ? rawInventoryId.split('/').pop() : null;
 
-    try {
-      // Fetch variant details to get inventory_item_id
-      const shopDomain = body.shop;
-      const apiUrl = `https://${shopDomain}/admin/api/2025-01/variants/${variantId}.json`;
-      
-      // Note: This requires API access - we'll need to store it differently
-      // For now, just store variantId and we'll map it later
-      console.log("Storing variant:", variantId);
-    } catch (err) {
-      console.log("Could not fetch inventory item ID:", err.message);
-    }
+    console.log(`🔍 Mapping Variant ${variantId} to Inventory Item ${inventoryItemId}`);
 
+    // 3. Save to Prisma with the Inventory ID
     const subscription = await prisma.backInStock.create({
       data: {
-        email: body.email,
-        variantId: String(body.variantId),
-        inventoryItemId: inventoryItemId ? String(inventoryItemId) : null,
-        shop: body.shop,
+        email,
+        variantId: String(variantId),
+        inventoryItemId: String(inventoryItemId), // Now this will NOT be null
+        shop,
       },
     });
 
-    console.log("Created subscription:", subscription);
-
     return new Response(
       JSON.stringify({ success: true, data: subscription }), 
-      {
-        status: 200,
-        headers: { 
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      }
+      { status: 200, headers: { "Content-Type": "application/json" } }
     );
+
   } catch (err) {
     console.error("SUBSCRIBE ERROR:", err);
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-      }),
-      { 
-        status: 500, 
-        headers: { 
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        } 
-      }
-    );
+    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
 };
