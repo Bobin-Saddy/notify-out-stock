@@ -7,86 +7,75 @@ export const action = async ({ request }) => {
     const { shop, payload, topic } = await authenticate.webhook(request);
     
     console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("📦 WEBHOOK RECEIVED");
+    console.log("📦 PRODUCTS_UPDATE WEBHOOK RECEIVED");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("🏪 Shop:", shop);
-    console.log("📋 Topic:", topic);
-    console.log("📦 Payload:", JSON.stringify(payload, null, 2));
-    
-    // Check what inventory item IDs are in the payload
-    if (payload.inventory_item_id) {
-      console.log("🔢 Inventory Item ID:", payload.inventory_item_id);
-    }
-    
-    if (payload.id) {
-      console.log("🔢 Inventory Level ID:", payload.id);
-    }
+    console.log("📦 Product:", payload.title);
+    console.log("🔗 Handle:", payload.handle);
 
-    // Get the inventory item ID from webhook
-    const inventoryItemId = String(payload.inventory_item_id || payload.id);
-    console.log(shop, inventoryItemId)
-    
-    console.log("\n🔍 SEARCHING FOR SUBSCRIBERS:");
-    console.log("Looking for inventoryItemId:", inventoryItemId);
+    // Get all variants from the product
+    const variants = payload.variants || [];
+    console.log(`\n🔍 Found ${variants.length} variants to check`);
 
-    // First, let's see ALL subscribers in database
-    const allSubscribers = await prisma.backInStock.findMany({
-      where: {
-        shop: shop,
-        notified: false,
-      },
-    });
-    
-    console.log("\n📊 ALL UNNOTIFIED SUBSCRIBERS:", allSubscribers);
-
-    // Now try to find by inventory item ID
-    const subscribersByInventory = await prisma.backInStock.findMany({
-      where: {
-        inventoryItemId: inventoryItemId,
-        shop: shop,
-        notified: false,
-      },
-    });
-
-    console.log(`\n📧 Subscribers found: ${subscribersByInventory.length}`);
-
-    if (subscribersByInventory.length === 0) {
-      console.log("⚠️ No subscribers found for this inventory item");
-      console.log("💡 TIP: Check if variantId is being stored instead of inventoryItemId");
-    }
-
-    // Check if inventory is now available
-    const available = payload.available || 0;
-    console.log(`\n📊 Available quantity: ${available}`);
-
-    if (available > 0) {
-      console.log("✅ Product is IN STOCK!");
+    for (const variant of variants) {
+      // Clean variant ID (remove gid:// if present)
+      const variantId = String(variant.id).replace('gid://shopify/ProductVariant/', '');
       
-      for (const subscriber of subscribersByInventory) {
-        try {
-          console.log(`\n📧 Sending email to: ${subscriber.email}`);
-          
-          // We need to get product details - for now using generic message
-          await sendBackInStockEmail(
-            subscriber.email,
-            "Product", // We'll need to fetch this
-            "Default",
-            `https://${shop}`,
-            shop
-          );
+      console.log(`\n━━━ Checking Variant ━━━`);
+      console.log(`🆔 Variant ID: ${variantId}`);
+      console.log(`🏷️  Title: ${variant.title}`);
+      console.log(`📊 Inventory: ${variant.inventory_quantity}`);
+      console.log(`📦 SKU: ${variant.sku || 'N/A'}`);
 
-          await prisma.backInStock.update({
-            where: { id: subscriber.id },
-            data: { notified: true },
-          });
+      // Check if variant is NOW in stock
+      if (variant.inventory_quantity > 0) {
+        console.log(`✅ Variant ${variantId} is IN STOCK!`);
+        
+        // Find unnotified subscribers for THIS variant
+        const subscribers = await prisma.backInStock.findMany({
+          where: {
+            variantId: variantId,
+            shop: shop,
+            notified: false,
+          },
+        });
 
-          console.log(`✅ Successfully notified: ${subscriber.email}`);
-        } catch (emailError) {
-          console.error(`❌ Email failed:`, emailError.message);
+        console.log(`📧 Found ${subscribers.length} subscribers to notify`);
+
+        if (subscribers.length === 0) {
+          console.log(`ℹ️  No subscribers for variant ${variantId}`);
+          continue;
         }
+
+        // Send email to each subscriber
+        for (const subscriber of subscribers) {
+          try {
+            const productUrl = `https://${shop}/products/${payload.handle}?variant=${variant.id}`;
+            
+            console.log(`📧 Sending email to: ${subscriber.email}`);
+            
+            await sendBackInStockEmail(
+              subscriber.email,
+              payload.title,
+              variant.title,
+              productUrl,
+              shop
+            );
+
+            // Mark as notified
+            await prisma.backInStock.update({
+              where: { id: subscriber.id },
+              data: { notified: true },
+            });
+
+            console.log(`✅ Successfully notified: ${subscriber.email}`);
+          } catch (emailError) {
+            console.error(`❌ Email failed for ${subscriber.email}:`, emailError.message);
+          }
+        }
+      } else {
+        console.log(`⚠️  Variant ${variantId} is still OUT of stock (Qty: ${variant.inventory_quantity})`);
       }
-    } else {
-      console.log("⚠️ Product is still OUT of stock");
     }
 
     console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
