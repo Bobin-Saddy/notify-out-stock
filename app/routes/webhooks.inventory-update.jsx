@@ -38,19 +38,18 @@ export async function action({ request }) {
     // 📧 Email setup (Using 587 for better cloud compatibility)
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
-  port: 467,
-  secure: false, // Must be false for 587
+  port: 587,
+  secure: false, // Use false for Port 587
   auth: {
     user: process.env.MAIL_USER,
     pass: process.env.MAIL_PASS, 
   },
-  // Add these settings to bypass cloud network restrictions
+  // Add these specific TLS settings for cloud environments
   tls: {
     rejectUnauthorized: false,
-    ciphers: 'SSLv3'
+    minVersion: "TLSv1.2"
   },
-  connectionTimeout: 20000, // Wait 20 seconds
-  greetingTimeout: 20000,
+  connectionTimeout: 20000, // Increase to 20 seconds
 });
 
     // 📤 Send emails
