@@ -1,4 +1,4 @@
-import { authenticate } from "../shopify.server";
+import { authenticate } from "./shopify.server";
 import prisma from "./db.server";
 import { sendBackInStockEmail } from "./routes/utils/email.server";
 
