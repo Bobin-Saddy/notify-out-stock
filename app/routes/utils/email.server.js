@@ -2,21 +2,14 @@ import nodemailer from "nodemailer";
 
 // Using Port 587 is more reliable on cloud hosts like Railway
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // Use false for Port 587
-  requireTLS: true,
-  secureConnection: false,
+  service: "gmail",
   auth: {
     user: process.env.MAIL_USER,
     pass: process.env.MAIL_PASS, 
   },
-  // Add these specific TLS settings for cloud environments
   tls: {
-    rejectUnauthorized: false,
-    minVersion: "TLSv1.2"
-  },
-  connectionTimeout: 120000, // Increase to 20 seconds
+    rejectUnauthorized: false
+  }
 });
 
 export async function sendBackInStockEmail(email, productName, variantName, productUrl, shop) {
