@@ -83,7 +83,7 @@ const shopify = shopifyApp({
               topic: "PRODUCTS_UPDATE",
               webhookSubscription: {
                 // ✅ NO leading slash - this is the key fix
-                callbackUrl: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
+                callbackUrl: `${process.env.SHOPIFY_APP_URL}webhooks/products-update`,
                 format: "JSON"
               }
             }
