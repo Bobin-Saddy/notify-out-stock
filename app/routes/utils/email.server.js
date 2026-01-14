@@ -1,31 +1,23 @@
-import nodemailer from "nodemailer";
-
-// Using Port 587 is more reliable on cloud hosts like Railway
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // Use false for Port 587
-  requireTLS: true,
-  secureConnection: false,
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS, 
-  },
-  // Add these specific TLS settings for cloud environments
-  tls: {
-    rejectUnauthorized: false,
-    minVersion: "TLSv1.2"
-  },
-  connectionTimeout: 120000, // Increase to 20 seconds
-});
+/**
+ * Note: Make sure RESEND_API_KEY is added to your Railway Variables
+ * Value: re_Pmc923mt_B2FwNJU5rRthi8Ff2QKYPTiV
+ */
 
 export async function sendBackInStockEmail(email, productName, variantName, productUrl, shop) {
   try {
-    const mailOptions = {
-      from: `"${shop}" <${process.env.MAIL_USER}>`,
-      to: email,
-      subject: `🔔 ${productName} is Back in Stock!`,
-      html: `
+    console.log("Using API Key:", process.env.RESEND_API_KEY ? "Key Found" : "Key MISSING");
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY || 're_Pmc923mt_B2FwNJU5rRthi8Ff2QKYPTiV'}`,
+    'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        // Note: Jab tak domain verify nahi hota, sirf 'onboarding@resend.dev' use karein
+        from: 'Restock Alert <onboarding@resend.dev>',
+        to: email,
+        subject: `🔔 ${productName} is Back in Stock!`,
+        html: `
         <!DOCTYPE html>
         <html>
         <head>
@@ -56,15 +48,22 @@ export async function sendBackInStockEmail(email, productName, variantName, prod
           </div>
         </body>
         </html>
-      `,
-    };
+        `,
+      })
+    });
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log("✅ Email sent successfully:", info.messageId);
-    return { success: true };
+    const result = await response.json();
+
+    if (response.ok) {
+      console.log("✅ Email sent successfully via Resend:", result.id);
+      return { success: true };
+    } else {
+      console.error("❌ Resend API Error:", result);
+      return { success: false, error: result };
+    }
     
   } catch (error) {
-    console.error("❌ Nodemailer Error:", error.message);
+    console.error("❌ Network Error while calling Resend:", error.message);
     throw error;
   }
 }

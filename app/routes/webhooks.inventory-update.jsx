@@ -1,91 +1,92 @@
 import prisma from "../db.server";
-import nodemailer from "nodemailer";
+import { authenticate } from "../shopify.server";
 
 export async function action({ request }) {
+  // 1. Authenticate to get the admin object
+  const { admin, shop } = await authenticate.webhook(request);
+
   try {
     const payload = await request.json();
-    
-    // Shopify inventory webhook sends inventory_item_id
     const inventoryItemId = String(payload.inventory_item_id);
     const available = payload.available;
 
-    console.log(`📦 Inventory Update Received: Item ${inventoryItemId}, Qty: ${available}`);
+    console.log(`📦 Inventory Update: Item ${inventoryItemId}, Qty: ${available}`);
 
-    // Only proceed if stock is back (available > 0)
     if (available <= 0) {
-      return new Response("Ignored: Still out of stock", { status: 200 });
+      return new Response("Ignored", { status: 200 });
     }
 
-    // 🔍 Find subscribers
-    // NOTE: Make sure your DB has inventoryItemId. 
-    // If not, you might need to find by variantId.
+    // 2. Find subscribers in DB
     const subscribers = await prisma.backInStock.findMany({
       where: { 
-        OR: [
-          { inventoryItemId: inventoryItemId },
-          // { variantId: some_variant_id } // Optional fallback
-        ],
+        inventoryItemId: inventoryItemId,
         notified: false 
       },
     });
 
-    console.log("Subscribers found:", subscribers.length);
-
     if (subscribers.length === 0) {
-      return new Response("No subscribers to notify", { status: 200 });
+      return new Response("No subscribers", { status: 200 });
     }
 
-    // 📧 Email setup (Using 587 for better cloud compatibility)
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // Use false for Port 587
-  requireTLS: true,
-  secureConnection: false,
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS, 
-  },
-  // Add these specific TLS settings for cloud environments
-  tls: {
-    rejectUnauthorized: false,
-    minVersion: "TLSv1.2"
-  },
-  connectionTimeout: 120000, // Increase to 20 seconds
-});
+    // 3. Fetch Product Details from Shopify using GraphQL
+    const response = await admin.graphql(`
+      query {
+        inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
+          variant {
+            displayName
+            product {
+              title
+            }
+          }
+        }
+      }
+    `);
 
-    // 📤 Send emails
+    const details = await response.json();
+    const productName = details.data?.inventoryItem?.variant?.product?.title || "A product you like";
+    const variantName = details.data?.inventoryItem?.variant?.displayName || "";
+
+    // 4. Send emails via Resend
     for (const sub of subscribers) {
       try {
-        await transporter.sendMail({
-          from: `"Restock Alert" <${process.env.MAIL_USER}>`,
-          to: sub.email,
-          subject: "🎉 Product is back in stock!",
-          html: `
-            <div style="font-family: sans-serif; padding: 20px;">
-              <h2>Good news!</h2>
-              <p>The product you were waiting for is now back in stock.</p>
-              <p>Shop: <strong>${sub.shop}</strong></p>
-              <p><a href="https://${sub.shop}" style="padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 5px;">Visit Store</a></p>
-            </div>
-          `,
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'Restock Alert <onboarding@resend.dev>',
+            to: sub.email,
+            subject: `🔔 ${productName} is Back in Stock!`,
+            html: `
+              <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                <h2 style="color: #28a745;">🎉 Great News!</h2>
+                <p>The <strong>${productName}</strong> is now back in stock.</p>
+                ${variantName ? `<p style="color: #666;">Variant: ${variantName}</p>` : ''}
+                <p>Shop: <strong>${sub.shop}</strong></p>
+                <br />
+                <a href="https://${sub.shop}" style="background: #000; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">Shop Now</a>
+              </div>
+            `
+          })
         });
 
-        // Mark as notified instead of deleting immediately (safer)
-        await prisma.backInStock.update({
-          where: { id: sub.id },
-          data: { notified: true }
-        });
-
-        console.log(`✅ Email sent to ${sub.email}`);
-      } catch (emailErr) {
-        console.error(`❌ Failed for ${sub.email}:`, emailErr.message);
+        if (res.ok) {
+          await prisma.backInStock.update({
+            where: { id: sub.id },
+            data: { notified: true }
+          });
+          console.log(`✅ Success for ${sub.email}`);
+        }
+      } catch (err) {
+        console.error("❌ Send Error:", err.message);
       }
     }
 
     return new Response("OK", { status: 200 });
   } catch (err) {
-    console.error("Webhook logic error:", err);
-    return new Response("Server error", { status: 500 });
+    console.error("Webhook error:", err);
+    return new Response("Error", { status: 500 });
   }
 }
