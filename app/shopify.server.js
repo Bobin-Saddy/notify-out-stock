@@ -20,23 +20,67 @@ const shopify = shopifyApp({
     expiringOfflineAccessTokens: true,
   },
 
-  // ✅ Register webhook after OAuth
+  // ✅ Register webhook after OAuth - CORRECTED METHOD
   hooks: {
     afterAuth: async ({ session, admin }) => {
       console.log("🔗 Registering webhooks for shop:", session.shop);
       
       try {
-        // Register PRODUCTS_UPDATE webhook (NOT inventory_levels_update)
-        await admin.rest.resources.Webhook.create({
-          session: session,
-          topic: "products/update",
-          address: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
-          format: "json",
+        // ✅ Use admin.rest.post instead of admin.rest.resources
+        const response = await admin.rest.post({
+          path: 'webhooks',
+          data: {
+            webhook: {
+              topic: 'products/update',
+              address: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
+              format: 'json'
+            }
+          }
         });
         
-        console.log("✅ products/update webhook registered");
+        console.log("✅ products/update webhook registered successfully");
+        console.log("Webhook details:", response.body);
       } catch (error) {
-        console.error("❌ Webhook registration failed:", error);
+        console.error("❌ Webhook registration failed:", error.message);
+        
+        // Try alternative method if first fails
+        try {
+          const fallbackResponse = await admin.graphql(
+            `#graphql
+            mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+              webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+                webhookSubscription {
+                  id
+                  topic
+                  endpoint {
+                    __typename
+                    ... on WebhookHttpEndpoint {
+                      callbackUrl
+                    }
+                  }
+                }
+                userErrors {
+                  field
+                  message
+                }
+              }
+            }`,
+            {
+              variables: {
+                topic: "PRODUCTS_UPDATE",
+                webhookSubscription: {
+                  callbackUrl: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
+                  format: "JSON"
+                }
+              }
+            }
+          );
+          
+          const result = await fallbackResponse.json();
+          console.log("✅ Webhook registered via GraphQL:", result);
+        } catch (graphqlError) {
+          console.error("❌ GraphQL webhook registration also failed:", graphqlError.message);
+        }
       }
     },
   },
