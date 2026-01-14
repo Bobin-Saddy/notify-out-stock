@@ -20,23 +20,45 @@ const shopify = shopifyApp({
     expiringOfflineAccessTokens: true,
   },
 
-  // ✅ Register webhook after OAuth
+  // ✅ Simplified webhook registration using GraphQL
   hooks: {
     afterAuth: async ({ session, admin }) => {
       console.log("🔗 Registering webhooks for shop:", session.shop);
       
       try {
-        // Register PRODUCTS_UPDATE webhook (NOT inventory_levels_update)
-        await admin.rest.resources.Webhook.create({
-          session: session,
-          topic: "products/update",
-          address: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
-          format: "json",
-        });
+        const response = await admin.graphql(
+          `mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+            webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+              webhookSubscription {
+                id
+                topic
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }`,
+          {
+            variables: {
+              topic: "PRODUCTS_UPDATE",
+              webhookSubscription: {
+                callbackUrl: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
+                format: "JSON"
+              }
+            }
+          }
+        );
         
-        console.log("✅ products/update webhook registered");
+        const result = await response.json();
+        
+        if (result.data.webhookSubscriptionCreate.userErrors.length > 0) {
+          console.error("❌ Webhook registration errors:", result.data.webhookSubscriptionCreate.userErrors);
+        } else {
+          console.log("✅ Webhook registered successfully:", result.data.webhookSubscriptionCreate.webhookSubscription);
+        }
       } catch (error) {
-        console.error("❌ Webhook registration failed:", error);
+        console.error("❌ Webhook registration failed:", error.message);
       }
     },
   },
