@@ -4,41 +4,40 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS,
+    pass: process.env.MAIL_PASS, // ⚠️ Use Gmail App Password
   },
 });
 
-export async function sendBackInStockEmail(email, productTitle, productUrl, variantTitle) {
+export async function sendBackInStockEmail(email, productName, variantName, productUrl, shop) {
   try {
     const mailOptions = {
-      from: `"Restockly - Stock Alerts" <${process.env.MAIL_USER}>`,
+      from: `"${shop}" <${process.env.MAIL_USER}>`,
       to: email,
-      subject: `🎉 ${productTitle} is Back in Stock!`,
+      subject: `🔔 ${productName} is Back in Stock!`,
       html: `
         <!DOCTYPE html>
         <html>
         <head>
+          <meta charset="UTF-8">
           <style>
             body { 
-              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-              line-height: 1.6; 
-              color: #333; 
-              margin: 0;
+              font-family: Arial, sans-serif; 
+              margin: 0; 
               padding: 0;
               background-color: #f4f4f4;
             }
             .container { 
               max-width: 600px; 
               margin: 20px auto; 
-              background: #ffffff;
-              border-radius: 10px;
+              background: white;
+              border-radius: 8px;
               overflow: hidden;
-              box-shadow: 0 0 20px rgba(0,0,0,0.1);
+              box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             }
             .header { 
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              background: #000; 
               color: #fff; 
-              padding: 40px 20px; 
+              padding: 30px 20px; 
               text-align: center; 
             }
             .header h1 {
@@ -47,99 +46,74 @@ export async function sendBackInStockEmail(email, productTitle, productUrl, vari
             }
             .content { 
               padding: 40px 30px; 
+              text-align: center;
             }
-            .product-info {
-              background: #f9f9f9;
-              padding: 20px;
-              border-radius: 8px;
-              margin: 20px 0;
-              border-left: 4px solid #667eea;
+            .product-name {
+              font-size: 24px;
+              font-weight: bold;
+              color: #000;
+              margin-bottom: 10px;
             }
-            .product-info h2 {
-              margin-top: 0;
-              color: #333;
-              font-size: 22px;
+            .variant-name {
+              font-size: 16px;
+              color: #666;
+              margin-bottom: 20px;
+            }
+            .message {
+              font-size: 16px;
+              color: #555;
+              margin-bottom: 30px;
+              line-height: 1.6;
             }
             .button { 
               display: inline-block; 
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: #fff !important; 
               padding: 15px 40px; 
+              background: #28a745; 
+              color: white !important; 
               text-decoration: none; 
-              border-radius: 50px;
-              margin: 20px 0;
+              border-radius: 5px; 
               font-weight: bold;
               font-size: 16px;
-              box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-              transition: transform 0.2s;
-            }
-            .button:hover {
-              transform: translateY(-2px);
-            }
-            .alert-box {
-              background: #fff3cd;
-              border: 1px solid #ffc107;
-              padding: 15px;
-              border-radius: 5px;
-              margin: 20px 0;
-              color: #856404;
             }
             .footer { 
               text-align: center; 
-              color: #666; 
+              padding: 20px; 
               font-size: 12px; 
-              padding: 20px;
+              color: #999;
               background: #f9f9f9;
-              border-top: 1px solid #eee;
-            }
-            .emoji {
-              font-size: 50px;
-              margin: 10px 0;
             }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
-              <div class="emoji">🎉</div>
-              <h1>Great News!</h1>
+              <h1>🎉 Great News!</h1>
             </div>
             <div class="content">
-              <div class="product-info">
-                <h2>${productTitle}</h2>
-                ${variantTitle && variantTitle !== "Default Title" ? `<p><strong>Variant:</strong> ${variantTitle}</p>` : ''}
-              </div>
-              
-              <div class="alert-box">
-                <strong>⚡ Hurry!</strong> The product you've been waiting for is now available. Stock is limited and might sell out quickly.
-              </div>
-              
-              <p>You requested to be notified when this product comes back in stock, and it's finally here!</p>
-              
-              <center>
-                <a href="${productUrl}" class="button">🛒 Shop Now</a>
-              </center>
-              
-              <p style="margin-top: 30px; font-size: 14px; color: #666;">
-                Don't wait too long - popular items sell out fast!
+              <div class="product-name">${productName}</div>
+              ${variantName !== 'Default Title' ? `<div class="variant-name">${variantName}</div>` : ''}
+              <p class="message">
+                The product you've been waiting for is back in stock!<br>
+                Don't miss out - grab it before it's gone again.
               </p>
+              <a href="${productUrl}" class="button">Shop Now →</a>
             </div>
             <div class="footer">
-              <p>You received this email because you subscribed to back-in-stock notifications.</p>
-              <p>© ${new Date().getFullYear()} Restockly - Stock Alerts. All rights reserved.</p>
+              <p>You subscribed to back-in-stock notifications for this product.</p>
+              <p>© ${new Date().getFullYear()} ${shop}</p>
             </div>
           </div>
         </body>
         </html>
       `,
-      text: `Good news! ${productTitle} ${variantTitle && variantTitle !== "Default Title" ? `(${variantTitle})` : ''} is back in stock! Visit ${productUrl} to purchase now before it sells out again.`
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("✓ Email sent successfully:", info.messageId);
-    return { success: true, messageId: info.messageId };
+    console.log("✅ Email sent:", info.messageId);
+    return { success: true };
+    
   } catch (error) {
-    console.error("❌ Email sending error:", error);
-    return { success: false, error: error.message };
+    console.error("❌ Email error:", error);
+    throw error;
   }
 }

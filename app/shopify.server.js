@@ -20,11 +20,36 @@ const shopify = shopifyApp({
     expiringOfflineAccessTokens: true,
   },
 
-  // ✅ ONLY THIS PART IS NEW
+  // ✅ Register webhook after OAuth
+  hooks: {
+    afterAuth: async ({ session, admin }) => {
+      console.log("🔗 Registering webhooks for shop:", session.shop);
+      
+      try {
+        // Register PRODUCTS_UPDATE webhook
+        const response = await admin.rest.post({
+          path: 'webhooks',
+          data: {
+            webhook: {
+              topic: 'products/update',
+              address: `${process.env.SHOPIFY_APP_URL}/webhooks/products-update`,
+              format: 'json'
+            }
+          }
+        });
+        
+        console.log("✅ Webhook registered:", response);
+      } catch (error) {
+        console.error("❌ Webhook registration failed:", error);
+      }
+    },
+  },
+
+  // ✅ Define webhooks
   webhooks: {
-     INVENTORY_LEVELS_UPDATE: {
+    PRODUCTS_UPDATE: {
       deliveryMethod: "http",
-      callbackUrl: "/webhooks/inventory-update",
+      callbackUrl: "/webhooks/products-update",
     },
   },
 
