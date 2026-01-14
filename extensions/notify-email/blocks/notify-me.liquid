@@ -1,15 +1,49 @@
 {% if product.selected_or_first_available_variant.available == false %}
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
-#bis-btn { width:100%; padding:15px; background:black; color:white; cursor:pointer; border:none; border-radius: 5px; font-size: 16px; }
-#bis-modal { margin-top: 15px; padding: 20px; background: #f9f9f9; border-radius: 5px; }
+#bis-btn { 
+  width:100%; 
+  padding:15px; 
+  background:black; 
+  color:white; 
+  cursor:pointer; 
+  border:none; 
+  border-radius: 5px; 
+  font-size: 16px; 
+  font-weight: bold;
+  transition: background 0.3s;
+}
+#bis-btn:hover {
+  background: #333;
+}
+#bis-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+#bis-modal { 
+  margin-top: 15px; 
+  padding: 20px; 
+  background: #f9f9f9; 
+  border-radius: 5px; 
+  border: 1px solid #ddd;
+}
 </style>
 
-<button id="bis-btn">🔔 Notify me when available</button>
+<button id="bis-btn" data-variant-id="{{ product.selected_or_first_available_variant.id }}">
+  🔔 Notify me when available
+</button>
 
 <div id="bis-modal" style="display:none;">
-  <input type="email" id="bis-email" placeholder="Enter your email" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #ddd;border-radius:5px;">
-  <button id="bis-submit" style="width:100%;padding:12px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:5px;font-weight:bold;">Subscribe</button>
+  <input 
+    type="email" 
+    id="bis-email" 
+    placeholder="Enter your email" 
+    style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #ddd;border-radius:5px;"
+    required
+  >
+  <button id="bis-submit" style="width:100%;padding:12px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:5px;font-weight:bold;">
+    Subscribe
+  </button>
   <p id="bis-message" style="margin-top:10px;font-size:14px;"></p>
 </div>
 
@@ -20,30 +54,107 @@
   const submitBtn = document.getElementById("bis-submit");
   const emailInput = document.getElementById("bis-email");
   const message = document.getElementById("bis-message");
+  const shop = "{{ shop.permanent_domain }}";
+  const productName = "{{ product.title | escape }}";
+  const productHandle = "{{ product.handle }}";
 
+  // ✅ Listen for variant changes in the product form
+  function updateVariantId() {
+    const currentVariant = getCurrentVariant();
+    if (currentVariant) {
+      const variantId = currentVariant.id.toString().replace('gid://shopify/ProductVariant/', '');
+      btn.setAttribute('data-variant-id', variantId);
+      
+      // Update button visibility based on stock
+      if (currentVariant.available) {
+        btn.style.display = 'none';
+        modal.style.display = 'none';
+      } else {
+        btn.style.display = 'block';
+      }
+      
+      console.log("Variant changed to:", variantId, "Available:", currentVariant.available);
+    }
+  }
+
+  // ✅ Get current selected variant from Shopify's variant selector
+  function getCurrentVariant() {
+    // Method 1: Check URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const variantIdFromUrl = urlParams.get('variant');
+    
+    if (variantIdFromUrl) {
+      const variant = {{ product.variants | json }}.find(v => v.id.toString().includes(variantIdFromUrl));
+      if (variant) return variant;
+    }
+
+    // Method 2: Check selected options in form
+    const form = document.querySelector('form[action*="/cart/add"]');
+    if (form) {
+      const variantIdInput = form.querySelector('select[name="id"], input[name="id"]');
+      if (variantIdInput && variantIdInput.value) {
+        const variant = {{ product.variants | json }}.find(v => 
+          v.id.toString().includes(variantIdInput.value) || 
+          v.id == variantIdInput.value
+        );
+        if (variant) return variant;
+      }
+    }
+
+    // Method 3: Return first unavailable variant as fallback
+    return {{ product.selected_or_first_available_variant | json }};
+  }
+
+  // ✅ Watch for variant changes
+  document.addEventListener('DOMContentLoaded', () => {
+    updateVariantId();
+
+    // Listen to variant selector changes
+    const variantSelectors = document.querySelectorAll('select[name="id"], input[name="id"], .product-form__input input, .product-form__input select');
+    variantSelectors.forEach(selector => {
+      selector.addEventListener('change', updateVariantId);
+    });
+
+    // Listen to URL changes (for variant links)
+    if ('URLSearchParams' in window) {
+      window.addEventListener('popstate', updateVariantId);
+    }
+  });
+
+  // ✅ Show modal on button click
   btn.onclick = () => {
     modal.style.display = "block";
+    message.textContent = "";
   };
 
+  // ✅ Handle subscription
   submitBtn.onclick = async () => {
     const email = emailInput.value.trim();
     
-    if (!email || !email.includes("@")) {
-      message.textContent = "❌ Please enter a valid email";
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      message.textContent = "❌ Please enter a valid email address";
       message.style.color = "red";
       return;
     }
 
+    // Get current variant ID
+    const currentVariant = getCurrentVariant();
+    if (!currentVariant) {
+      message.textContent = "❌ Could not detect variant. Please try again.";
+      message.style.color = "red";
+      return;
+    }
+
+    const variantId = currentVariant.id.toString().replace('gid://shopify/ProductVariant/', '');
+    
     submitBtn.disabled = true;
     submitBtn.textContent = "Subscribing...";
     message.textContent = "";
 
     try {
-      const variantId = "{{ product.selected_or_first_available_variant.id }}".replace('gid://shopify/ProductVariant/', '');
-      const shop = "{{ shop.permanent_domain }}";
-      const productName = "{{ product.title | escape }}";
-
-      console.log("Sending:", { email, variantId, shop, productName });
+      console.log("Subscribing:", { email, variantId, shop, productName });
 
       const res = await fetch("/apps/notify-out-stock/proxy/subscribe", {
         method: "POST",
@@ -62,19 +173,21 @@
       const data = text ? JSON.parse(text) : {};
 
       if (data.success) {
-        message.textContent = "✓ Subscribed! We'll email you when it's back in stock.";
+        message.textContent = "✅ Subscribed! We'll email you when it's back in stock.";
         message.style.color = "green";
         emailInput.value = "";
+        
+        // Hide modal after 3 seconds
         setTimeout(() => { 
           modal.style.display = "none"; 
           message.textContent = "";
         }, 3000);
       } else {
-        message.textContent = "❌ " + (data.error || "Something went wrong");
+        message.textContent = "❌ " + (data.error || "Something went wrong. Please try again.");
         message.style.color = "red";
       }
     } catch (err) {
-      console.error("Error:", err);
+      console.error("Subscription error:", err);
       message.textContent = "❌ Network error. Please try again.";
       message.style.color = "red";
     } finally {
@@ -82,6 +195,13 @@
       submitBtn.textContent = "Subscribe";
     }
   };
+
+  // ✅ Allow Enter key to submit
+  emailInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      submitBtn.click();
+    }
+  });
 })();
 </script>
 {% endif %}
@@ -89,6 +209,7 @@
 {% schema %}
 {
   "name": "Notify Me",
-  "target": "section"
+  "target": "section",
+  "settings": []
 }
 {% endschema %}
