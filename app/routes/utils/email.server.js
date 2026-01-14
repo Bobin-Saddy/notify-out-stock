@@ -5,11 +5,12 @@
 
 export async function sendBackInStockEmail(email, productName, variantName, productUrl, shop) {
   try {
+    console.log("Using API Key:", process.env.RESEND_API_KEY ? "Key Found" : "Key MISSING");
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY || 're_Pmc923mt_B2FwNJU5rRthi8Ff2QKYPTiV'}`,
+    'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         // Note: Jab tak domain verify nahi hota, sirf 'onboarding@resend.dev' use karein
