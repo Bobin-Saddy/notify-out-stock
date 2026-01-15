@@ -34,7 +34,6 @@ export async function action({ request }) {
     const inventoryItemId = String(payload.inventory_item_id);
     const available = payload.available;
 
-    // --- 1. Fetch Full Product Details via GraphQL ---
     let productData = {
       title: "Product",
       variantTitle: "",
@@ -43,43 +42,53 @@ export async function action({ request }) {
       currency: "USD"
     };
 
+    // --- 1. Fetch Full Product Details (FIXED GRAPHQL CALL) ---
     try {
-      const { graphql } = await unauthenticated.admin(shop);
-      const response = await graphql(`
-        query getFullProductInfo {
-          inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
-            variant {
-              displayName
-              price
-              product {
-                title
-                featuredImage { url }
+      // Yahan hum 'admin' object nikaal rahe hain
+      const { admin } = await unauthenticated.admin(shop);
+      
+      // Check kar rahe hain ki graphql function available hai ya nahi
+      if (admin && typeof admin.graphql === 'function') {
+        const response = await admin.graphql(`
+          query getFullProductInfo {
+            inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
+              variant {
+                displayName
+                price
+                product {
+                  title
+                  featuredImage { url }
+                }
               }
             }
+            shop { currencyCode }
           }
-          shop { currencyCode }
-        }
-      `);
+        `);
 
-      const json = await response.json();
-      const variant = json.data?.inventoryItem?.variant;
-      if (variant) {
-        productData = {
-          title: variant.product.title,
-          variantTitle: variant.displayName,
-          price: variant.price,
-          image: variant.product.featuredImage?.url || "",
-          currency: json.data.shop.currencyCode
-        };
+        const json = await response.json();
+        const variant = json.data?.inventoryItem?.variant;
+        if (variant) {
+          productData = {
+            title: variant.product.title,
+            variantTitle: variant.displayName,
+            price: variant.price,
+            image: variant.product.featuredImage?.url || "",
+            currency: json.data.shop.currencyCode
+          };
+        }
+      } else {
+        console.error("❌ Admin GraphQL function not found in session");
       }
-    } catch (e) { console.error("GraphQL Error:", e.message); }
+    } catch (e) { 
+      console.error("❌ GraphQL Fetch Error:", e.message); 
+    }
 
     const productHtml = `
-      <div style="font-family: sans-serif; border: 1px solid #ddd; padding: 15px; border-radius: 8px; max-width: 400px;">
-        ${productData.image ? `<img src="${productData.image}" style="width: 100%; border-radius: 5px;" />` : ''}
-        <h2 style="margin-top: 10px;">${productData.title}</h2>
-        <p style="color: #666;">${productData.variantTitle}</p>
-        <p style="font-size: 18px; font-weight: bold;">Price: ${productData.currency} ${productData.price}</p>
+      <div style="font-family: sans-serif; border: 1px solid #ddd; padding: 15px; border-radius: 8px; max-width: 400px; background-color: #fff;">
+        ${productData.image ? `<img src="${productData.image}" style="width: 100%; border-radius: 5px; margin-bottom: 10px;" />` : ''}
+        <h2 style="margin: 0 0 10px 0; font-size: 20px;">${productData.title}</h2>
+        <p style="color: #666; margin: 0 0 10px 0;">${productData.variantTitle}</p>
+        <p style="font-size: 18px; font-weight: bold; color: #000;">Price: ${productData.currency} ${productData.price}</p>
       </div>
     `;
 
@@ -91,10 +100,13 @@ export async function action({ request }) {
         to: 'digittrix.savita@gmail.com',
         subject: `🚨 Out of Stock: ${productData.title}`,
         html: `
-          <h1 style="color: #d9534f;">🚨 Out of Stock Alert</h1>
-          ${productHtml}
-          <p>This product just went out of stock on <strong>${shop}</strong>.</p>
-          <a href="https://admin.shopify.com/store/${shop.split('.')[0]}/products" style="background:#d9534f; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px;">Check Inventory</a>
+          <div style="padding: 20px; background-color: #f9f9f9;">
+            <h1 style="color: #d9534f;">🚨 Out of Stock Alert</h1>
+            <p>This item just hit 0 quantity on your store <strong>${shop}</strong>.</p>
+            ${productHtml}
+            <br />
+            <a href="https://admin.shopify.com/store/${shop.split('.')[0]}/products" style="display: inline-block; background:#d9534f; color:#fff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight: bold;">Manage Inventory</a>
+          </div>
         `
       });
       return new Response("OK", { status: 200 });
@@ -112,10 +124,13 @@ export async function action({ request }) {
         to: sub.email,
         subject: `🎉 ${productData.title} is Back in Stock!`,
         html: `
-          <h1 style="color: #28a745;">🎉 It's Back!</h1>
-          ${productHtml}
-          <p>Good news! The product you were waiting for is back in stock at <strong>${shop}</strong>.</p>
-          <a href="https://${shop}" style="background:#000; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px;">Buy Now</a>
+          <div style="padding: 20px; background-color: #f4fdf4;">
+            <h1 style="color: #28a745;">🎉 It's Back!</h1>
+            <p>Good news! The product you were waiting for is back in stock at <strong>${shop}</strong>.</p>
+            ${productHtml}
+            <br />
+            <a href="https://${shop}" style="display: inline-block; background:#000; color:#fff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight: bold;">Buy Now →</a>
+          </div>
         `
       });
 
