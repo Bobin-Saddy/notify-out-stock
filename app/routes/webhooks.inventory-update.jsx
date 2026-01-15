@@ -70,19 +70,13 @@ export async function action({ request }) {
       </div>
     `;
 
-    // --- LOGIC START ---
+    // --- CORRECTED LOGIC ---
 
     if (available <= 0) {
-      console.log("Sending Out of Stock alert to Admin...");
-      await sendEmail({
-        from: 'Stock Alert <onboarding@resend.dev>',
-        to: 'digittrix.savita@gmail.com',
-        subject: `🚨 Out of Stock: ${productTitle}`,
-        html: `<div style="padding: 20px;"><h1>It's Back!</h1>${productCardHtml}<br/><a href="https://${shop}">Shop Now →</a></div>`
-      });
+      console.log("Item is out of stock. No emails sent.");
     } 
     else {
-      // Step 1: Check database for subscribers
+      // Item is back in stock - check for subscribers
       const subscribers = await prisma.backInStock.findMany({
         where: { 
           inventoryItemId: inventoryItemId, 
@@ -93,7 +87,7 @@ export async function action({ request }) {
       console.log(`Found ${subscribers.length} pending subscribers for this item.`);
 
       if (subscribers.length > 0) {
-        // Step 2: Send emails in a loop with a tiny delay to avoid 429 error
+        // Send "Back in Stock" emails to customers
         for (const sub of subscribers) {
           const sent = await sendEmail({
             from: 'Restock Alert <onboarding@resend.dev>',
