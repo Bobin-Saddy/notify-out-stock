@@ -1,55 +1,107 @@
-import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { json } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
+import React, { useState } from 'react';
+import { 
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, 
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+} from 'recharts';
 import { Mail, CheckCircle, XCircle, Clock, TrendingUp, Package, Users } from 'lucide-react';
+import prisma from "../db.server";
+import { authenticate } from "../shopify.server";
 
-export default function EmailStatsDashboard() {
-  const [stats, setStats] = useState({
-    totalEmails: 0,
-    successfulEmails: 0,
-    failedEmails: 0,
-    pendingSubscribers: 0,
-    outOfStockAlerts: 0,
-    backInStockAlerts: 0
+// --- BACKEND: LOAD DATA FOR DASHBOARD ---
+export async function loader({ request }) {
+  await authenticate.admin(request);
+
+  // 1. Get Summary Stats
+  const totalEmailsSent = await prisma.backInStock.count({ where: { notified: true } });
+  const pendingSubscribers = await prisma.backInStock.count({ where: { notified: false } });
+  
+  // 2. Get Data for Line/Bar Charts (Last 7 Days)
+  const historyRaw = await prisma.backInStock.findMany({
+    where: { notified: true },
+    orderBy: { updatedAt: 'asc' },
+    select: { updatedAt: true }
   });
 
-  const [emailHistory, setEmailHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Grouping data by date for Recharts
+  const dailyGroups = historyRaw.reduce((acc, item) => {
+    const date = new Date(item.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    acc[date] = (acc[date] || 0) + 1;
+    return acc;
+  }, {});
 
-  // Mock data - Replace with actual API call
-  useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setStats({
-        totalEmails: 1247,
-        successfulEmails: 1189,
-        failedEmails: 58,
-        pendingSubscribers: 342,
-        outOfStockAlerts: 89,
-        backInStockAlerts: 1158
-      });
+  const emailHistory = Object.keys(dailyGroups).map(date => ({
+    date,
+    sent: dailyGroups[date],
+    failed: 0, // In the future, add a 'status' field to Prisma to track this
+    pending: pendingSubscribers / 7 // Estimating distribution for visual
+  }));
 
-      setEmailHistory([
-        { date: 'Jan 10', sent: 145, failed: 8, pending: 32 },
-        { date: 'Jan 11', sent: 198, failed: 12, pending: 45 },
-        { date: 'Jan 12', sent: 167, failed: 5, pending: 38 },
-        { date: 'Jan 13', sent: 223, failed: 15, pending: 52 },
-        { date: 'Jan 14', sent: 189, failed: 9, pending: 41 },
-        { date: 'Jan 15', sent: 267, failed: 9, pending: 67 }
-      ]);
+  return json({
+    stats: {
+      totalEmails: totalEmailsSent,
+      successfulEmails: totalEmailsSent,
+      failedEmails: 0, 
+      pendingSubscribers: pendingSubscribers,
+      outOfStockAlerts: 0, // This would require a separate log table
+      backInStockAlerts: totalEmailsSent
+    },
+    emailHistory
+  });
+}
 
-      setLoading(false);
-    }, 1000);
-  }, []);
+// --- BACKEND: WEBHOOK ACTION (Your existing logic) ---
+export async function action({ request }) {
+  const { payload, shop, admin } = await authenticate.webhook(request);
+  const inventoryItemId = String(payload.inventory_item_id);
+  const available = Number(payload.available);
+
+  try {
+    const response = await admin.graphql(`
+      query {
+        inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
+          variant {
+            displayName
+            price
+            product { title, featuredImage { url } }
+          }
+        }
+        shop { currencyCode }
+      }
+    `);
+
+    const jsonRes = await response.json();
+    const variant = jsonRes.data?.inventoryItem?.variant;
+    if (!variant) return new Response("Variant not found", { status: 200 });
+
+    const subscribers = await prisma.backInStock.findMany({
+      where: { inventoryItemId, notified: false },
+    });
+
+    if (available > 0 && subscribers.length > 0) {
+      for (const sub of subscribers) {
+        // ... (Your sendEmail logic here) ...
+        await prisma.backInStock.update({ 
+          where: { id: sub.id }, 
+          data: { notified: true, updatedAt: new Date() } 
+        });
+      }
+    }
+    return new Response("OK", { status: 200 });
+  } catch (err) {
+    return new Response("Error", { status: 500 });
+  }
+}
+
+// --- FRONTEND: DASHBOARD COMPONENT ---
+export default function EmailStatsDashboard() {
+  const { stats, emailHistory } = useLoaderData();
 
   const pieData = [
     { name: 'Successful', value: stats.successfulEmails, color: '#10b981' },
     { name: 'Failed', value: stats.failedEmails, color: '#ef4444' },
     { name: 'Pending', value: stats.pendingSubscribers, color: '#f59e0b' }
-  ];
-
-  const emailTypeData = [
-    { name: 'Back In Stock', value: stats.backInStockAlerts, color: '#667eea' },
-    { name: 'Out of Stock', value: stats.outOfStockAlerts, color: '#ff6b6b' }
   ];
 
   const StatCard = ({ icon: Icon, title, value, color, bgColor }) => (
@@ -66,211 +118,49 @@ export default function EmailStatsDashboard() {
     </div>
   );
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600"></div>
-          <p className="mt-4 text-gray-600 font-medium">Loading statistics...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-8">
+    <div className="min-h-screen bg-slate-50 p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">📊 Email Statistics Dashboard</h1>
-          <p className="text-gray-600">Track your back-in-stock notification performance</p>
+          <h1 className="text-4xl font-bold text-gray-800">📊 Real-Time Stats</h1>
+          <p className="text-gray-600">Dynamic data from Prisma Database</p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <StatCard 
-            icon={Mail} 
-            title="Total Emails Sent" 
-            value={stats.totalEmails} 
-            color="#667eea"
-            bgColor="#eef2ff"
-          />
-          <StatCard 
-            icon={CheckCircle} 
-            title="Successful Deliveries" 
-            value={stats.successfulEmails} 
-            color="#10b981"
-            bgColor="#d1fae5"
-          />
-          <StatCard 
-            icon={XCircle} 
-            title="Failed Emails" 
-            value={stats.failedEmails} 
-            color="#ef4444"
-            bgColor="#fee2e2"
-          />
-          <StatCard 
-            icon={Clock} 
-            title="Pending Subscribers" 
-            value={stats.pendingSubscribers} 
-            color="#f59e0b"
-            bgColor="#fef3c7"
-          />
-          <StatCard 
-            icon={Package} 
-            title="Out of Stock Alerts" 
-            value={stats.outOfStockAlerts} 
-            color="#ff6b6b"
-            bgColor="#ffe5e5"
-          />
-          <StatCard 
-            icon={TrendingUp} 
-            title="Back In Stock Alerts" 
-            value={stats.backInStockAlerts} 
-            color="#667eea"
-            bgColor="#eef2ff"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <StatCard icon={Mail} title="Sent" value={stats.totalEmails} color="#667eea" bgColor="#eef2ff" />
+          <StatCard icon={CheckCircle} title="Success" value={stats.successfulEmails} color="#10b981" bgColor="#d1fae5" />
+          <StatCard icon={Clock} title="Waiting" value={stats.pendingSubscribers} color="#f59e0b" bgColor="#fef3c7" />
         </div>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Email Status Distribution */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-              <Mail className="mr-2" size={24} />
-              Email Status Distribution
-            </h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Email Type Distribution */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-              <Package className="mr-2" size={24} />
-              Alert Type Distribution
-            </h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={emailTypeData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {emailTypeData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Email History Chart */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-            <TrendingUp className="mr-2" size={24} />
-            Email Activity Over Time
-          </h2>
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={emailHistory}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#ffffff', 
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px'
-                }} 
-              />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="sent" 
-                stroke="#10b981" 
-                strokeWidth={3}
-                name="Sent Successfully"
-                dot={{ fill: '#10b981', r: 5 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="failed" 
-                stroke="#ef4444" 
-                strokeWidth={3}
-                name="Failed"
-                dot={{ fill: '#ef4444', r: 5 }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="pending" 
-                stroke="#f59e0b" 
-                strokeWidth={3}
-                name="Pending"
-                dot={{ fill: '#f59e0b', r: 5 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <h2 className="text-xl font-bold mb-4">Notification Trends</h2>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={emailHistory}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="sent" stroke="#10b981" strokeWidth={3} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-
-        {/* Bar Chart - Daily Comparison */}
+        
+        {/* Simplified Pie Chart */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-            <Users className="mr-2" size={24} />
-            Daily Email Comparison
-          </h2>
-          <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={emailHistory}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#ffffff', 
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px'
-                }} 
-              />
-              <Legend />
-              <Bar dataKey="sent" fill="#10b981" name="Sent Successfully" radius={[8, 8, 0, 0]} />
-              <Bar dataKey="failed" fill="#ef4444" name="Failed" radius={[8, 8, 0, 0]} />
-              <Bar dataKey="pending" fill="#f59e0b" name="Pending" radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Success Rate */}
-        <div className="mt-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg shadow-md p-8 text-white text-center">
-          <h2 className="text-2xl font-bold mb-2">Overall Success Rate</h2>
-          <p className="text-6xl font-bold">
-            {((stats.successfulEmails / stats.totalEmails) * 100).toFixed(1)}%
-          </p>
-          <p className="mt-2 text-lg opacity-90">
-            {stats.successfulEmails} out of {stats.totalEmails} emails delivered successfully
-          </p>
+           <h2 className="text-xl font-bold mb-4">Distribution</h2>
+           <div className="h-64">
+             <ResponsiveContainer width="100%" height="100%">
+               <PieChart>
+                 <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}>
+                   {pieData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                 </Pie>
+                 <Tooltip />
+               </PieChart>
+             </ResponsiveContainer>
+           </div>
         </div>
       </div>
     </div>
