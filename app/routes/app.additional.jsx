@@ -13,20 +13,17 @@ import { authenticate } from "../shopify.server";
 export async function loader({ request }) {
   await authenticate.admin(request);
 
-  // 1. Get Summary Stats
   const totalEmailsSent = await prisma.backInStock.count({ where: { notified: true } });
   const pendingSubscribers = await prisma.backInStock.count({ where: { notified: false } });
   
-  // 2. Get Data for Line/Bar Charts (Last 7 Days)
   const historyRaw = await prisma.backInStock.findMany({
     where: { notified: true },
-    orderBy: { updatedAt: 'asc' },
-    select: { updatedAt: true }
+    orderBy: { createdAt: 'asc' }, // Changed from updatedAt
+    select: { createdAt: true }    // Changed from updatedAt
   });
 
-  // Grouping data by date for Recharts
   const dailyGroups = historyRaw.reduce((acc, item) => {
-    const date = new Date(item.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     acc[date] = (acc[date] || 0) + 1;
     return acc;
   }, {});
