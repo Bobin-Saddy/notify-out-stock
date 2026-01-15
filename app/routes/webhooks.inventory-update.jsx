@@ -1,9 +1,9 @@
 import prisma from "../db.server";
-import { authenticate } from "../shopify.server";
+import { authenticate, unauthenticated } from "../shopify.server"; // Import unauthenticated here
 
 export async function action({ request }) {
-  // 1. Webhook authenticate karein (payload lene ke liye)
-  const { payload, shop, unauthenticated } = await authenticate.webhook(request);
+  // 1. Authenticate the webhook to get basic data
+  const { payload, shop } = await authenticate.webhook(request);
 
   try {
     const inventoryItemId = String(payload.inventory_item_id);
@@ -11,11 +11,10 @@ export async function action({ request }) {
 
     console.log(`📦 Inventory Update for ${shop}: Item ${inventoryItemId}, Qty: ${available}`);
 
-    // 2. Admin context manually create karein (graphql error fix)
-    // Agar authenticate.webhook se admin nahi milta, toh hum unauthenticated access use karte hain
+    // 2. Create admin context using the imported unauthenticated helper
     const { graphql } = await unauthenticated.admin(shop);
 
-    // 3. Fetch Product Details
+    // 3. Fetch Product Details from Shopify
     const response = await graphql(`
       query getProductInfo {
         inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
@@ -45,7 +44,7 @@ export async function action({ request }) {
         },
         body: JSON.stringify({
           from: 'Stock Alert <onboarding@resend.dev>',
-          to: 'digittrix.savita@gmail.com', // Admin email
+          to: 'digittrix.savita@gmail.com', // Admin Email
           subject: `🚨 Out of Stock: ${productName}`,
           html: `
             <div style="font-family: sans-serif; padding: 20px; border: 2px solid #d9534f; border-radius: 10px; max-width: 500px;">
@@ -102,6 +101,7 @@ export async function action({ request }) {
             where: { id: sub.id },
             data: { notified: true }
           });
+          console.log(`✅ Success for ${sub.email}`);
         }
       } catch (err) {
         console.error(`❌ Send error:`, err.message);
