@@ -1,5 +1,5 @@
 import prisma from "../db.server";
-import { authenticate, unauthenticated } from "../shopify.server";
+import { authenticate } from "../shopify.server";
 
 async function sendEmail(emailData) {
   try {
@@ -21,14 +21,14 @@ async function sendEmail(emailData) {
 }
 
 export async function action({ request }) {
-  const { payload, shop } = await authenticate.webhook(request);
+  const { payload, shop, session, admin } = await authenticate.webhook(request);
   const inventoryItemId = String(payload.inventory_item_id);
   const available = Number(payload.available);
 
   try {
     console.log(`Checking stock for ${shop}: Item ${inventoryItemId}, Qty: ${available}`);
 
-    const { admin } = await unauthenticated.admin(shop);
+    // Webhook se admin context directly milta hai
     const response = await admin.graphql(`
       query {
         inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
