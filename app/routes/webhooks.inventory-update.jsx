@@ -59,24 +59,66 @@ export async function action({ request }) {
     const price = variant.price;
     const imageUrl = variant.product.featuredImage?.url || "";
 
-    const productCardHtml = `
-      <div style="font-family: Arial, sans-serif; border: 1px solid #eeeeee; padding: 20px; border-radius: 12px; max-width: 450px; background-color: #ffffff;">
-        ${imageUrl ? `<img src="${imageUrl}" alt="${productTitle}" style="width: 100%; border-radius: 8px; margin-bottom: 15px;" />` : ''}
-        <h2 style="margin: 0; color: #333333; font-size: 22px;">${productTitle}</h2>
-        <p style="color: #777777; margin: 5px 0 15px 0; font-size: 16px;">${variantTitle}</p>
-        <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 20px;">
-          Price: ${currency} ${price}
-        </div>
-      </div>
-    `;
-
-    // --- CORRECTED LOGIC ---
+    // --- LOGIC START ---
 
     if (available <= 0) {
-      console.log("Item is out of stock. No emails sent.");
+      console.log("Sending Out of Stock alert to Admin...");
+      
+      const outOfStockEmailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
+          <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); padding: 30px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🚨 Out of Stock Alert</h1>
+            </div>
+            
+            ${imageUrl ? `
+              <div style="text-align: center; padding: 20px; background-color: #ffffff;">
+                <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+              </div>
+            ` : ''}
+            
+            <div style="padding: 30px; background-color: #ffffff;">
+              <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
+              <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
+              
+              <div style="background-color: #fff3cd; border-left: 4px solid #ff6b6b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                <p style="margin: 0; color: #856404; font-weight: bold;">⚠️ This item is now out of stock</p>
+              </div>
+              
+              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
+                    <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #666666; font-size: 14px; border-top: 1px solid #dee2e6;">Available:</td>
+                    <td style="padding: 10px 0; text-align: right; font-size: 18px; font-weight: bold; color: #ff6b6b; border-top: 1px solid #dee2e6;">0</td>
+                  </tr>
+                </table>
+              </div>
+              
+              <div style="text-align: center; margin-top: 30px;">
+                <a href="https://${shop}/admin" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px;">Go to Admin Dashboard →</a>
+              </div>
+            </div>
+          </div>
+          
+          <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
+            <p>This is an automated alert from your Shopify store</p>
+          </div>
+        </div>
+      `;
+      
+      await sendEmail({
+        from: 'Stock Alert <onboarding@resend.dev>',
+        to: 'digittrix.savita@gmail.com',
+        subject: `🚨 Out of Stock: ${productTitle}`,
+        html: outOfStockEmailHtml
+      });
     } 
     else {
-      // Item is back in stock - check for subscribers
+      // Step 1: Check database for subscribers
       const subscribers = await prisma.backInStock.findMany({
         where: { 
           inventoryItemId: inventoryItemId, 
@@ -87,13 +129,62 @@ export async function action({ request }) {
       console.log(`Found ${subscribers.length} pending subscribers for this item.`);
 
       if (subscribers.length > 0) {
-        // Send "Back in Stock" emails to customers
+        const backInStockEmailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
+            <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🎉 Great News!</h1>
+                <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your item is back in stock</p>
+              </div>
+              
+              ${imageUrl ? `
+                <div style="text-align: center; padding: 20px; background-color: #ffffff;">
+                  <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+                </div>
+              ` : ''}
+              
+              <div style="padding: 30px; background-color: #ffffff;">
+                <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
+                <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
+                
+                <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                  <p style="margin: 0; color: #155724; font-weight: bold;">✅ Now Available - Limited Stock!</p>
+                </div>
+                
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                  <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                      <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
+                      <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 10px 0; color: #666666; font-size: 14px; border-top: 1px solid #dee2e6;">Status:</td>
+                      <td style="padding: 10px 0; text-align: right; font-size: 16px; font-weight: bold; color: #28a745; border-top: 1px solid #dee2e6;">In Stock ✓</td>
+                    </tr>
+                  </table>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px;">
+                  <a href="https://${shop}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.4);">Shop Now →</a>
+                </div>
+                
+                <p style="text-align: center; color: #999999; font-size: 13px; margin-top: 20px;">Hurry! Items may sell out quickly.</p>
+              </div>
+            </div>
+            
+            <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
+              <p>You're receiving this because you signed up for restock notifications</p>
+            </div>
+          </div>
+        `;
+        
+        // Step 2: Send emails in a loop with a tiny delay to avoid 429 error
         for (const sub of subscribers) {
           const sent = await sendEmail({
             from: 'Restock Alert <onboarding@resend.dev>',
             to: sub.email,
             subject: `🎉 Back in Stock: ${productTitle}`,
-            html: `<div style="padding: 20px;"><h1>It's Back!</h1>${productCardHtml}<br/><a href="https://${shop}">Shop Now →</a></div>`
+            html: backInStockEmailHtml
           });
 
           if (sent) {
