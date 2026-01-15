@@ -32,7 +32,7 @@ export async function action({ request }) {
 
   try {
     const inventoryItemId = String(payload.inventory_item_id);
-    const available = payload.available;
+    const available = Number(payload.available); // Ensure it's a number
 
     let productData = {
       title: "Product",
@@ -42,12 +42,9 @@ export async function action({ request }) {
       currency: "USD"
     };
 
-    // --- 1. Fetch Full Product Details (FIXED GRAPHQL CALL) ---
+    // --- 1. Fetch Full Product Details ---
     try {
-      // Yahan hum 'admin' object nikaal rahe hain
       const { admin } = await unauthenticated.admin(shop);
-      
-      // Check kar rahe hain ki graphql function available hai ya nahi
       if (admin && typeof admin.graphql === 'function') {
         const response = await admin.graphql(`
           query getFullProductInfo {
@@ -76,8 +73,6 @@ export async function action({ request }) {
             currency: json.data.shop.currencyCode
           };
         }
-      } else {
-        console.error("❌ Admin GraphQL function not found in session");
       }
     } catch (e) { 
       console.error("❌ GraphQL Fetch Error:", e.message); 
@@ -92,53 +87,67 @@ export async function action({ request }) {
       </div>
     `;
 
-    // --- CASE A: OUT OF STOCK (Admin Alert) ---
+    // --- LOGIC START ---
+
+    // CASE 1: AGAR STOCK KHATAM HO GAYA (Admin Notification)
     if (available <= 0) {
+      console.log(`🚨 Stock is 0 or less (${available}). Notifying Admin...`);
       await sleep(600);
       await sendEmailWithRetry({
         from: 'Stock Alert <onboarding@resend.dev>',
         to: 'digittrix.savita@gmail.com',
-        subject: `🚨 Out of Stock: ${productData.title}`,
+        subject: `🚨 Out of Stock Alert: ${productData.title}`,
         html: `
           <div style="padding: 20px; background-color: #f9f9f9;">
-            <h1 style="color: #d9534f;">🚨 Out of Stock Alert</h1>
-            <p>This item just hit 0 quantity on your store <strong>${shop}</strong>.</p>
+            <h1 style="color: #d9534f;">Out of Stock Alert</h1>
+            <p>The following product just hit <strong>0</strong> stock on <strong>${shop}</strong>.</p>
             ${productHtml}
             <br />
-            <a href="https://admin.shopify.com/store/${shop.split('.')[0]}/products" style="display: inline-block; background:#d9534f; color:#fff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight: bold;">Manage Inventory</a>
+            <a href="https://admin.shopify.com/store/${shop.split('.')[0]}/products" style="display: inline-block; background:#d9534f; color:#fff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight: bold;">Update Stock Now</a>
           </div>
         `
       });
-      return new Response("OK", { status: 200 });
-    }
-
-    // --- CASE B: BACK IN STOCK (Customer Alert) ---
-    const subscribers = await prisma.backInStock.findMany({
-      where: { inventoryItemId, notified: false },
-    });
-
-    for (const sub of subscribers) {
-      await sleep(600);
-      const success = await sendEmailWithRetry({
-        from: 'Restock Alert <onboarding@resend.dev>',
-        to: sub.email,
-        subject: `🎉 ${productData.title} is Back in Stock!`,
-        html: `
-          <div style="padding: 20px; background-color: #f4fdf4;">
-            <h1 style="color: #28a745;">🎉 It's Back!</h1>
-            <p>Good news! The product you were waiting for is back in stock at <strong>${shop}</strong>.</p>
-            ${productHtml}
-            <br />
-            <a href="https://${shop}" style="display: inline-block; background:#000; color:#fff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight: bold;">Buy Now →</a>
-          </div>
-        `
+    } 
+    
+    // CASE 2: AGAR STOCK WAPAS AA GAYA (Customer Notification)
+    else if (available > 0) {
+      console.log(`🎉 Stock is back (${available}). Checking for subscribers...`);
+      
+      const subscribers = await prisma.backInStock.findMany({
+        where: { 
+          inventoryItemId: inventoryItemId, 
+          notified: false 
+        },
       });
 
-      if (success) {
-        await prisma.backInStock.update({
-          where: { id: sub.id },
-          data: { notified: true }
-        });
+      if (subscribers.length > 0) {
+        for (const sub of subscribers) {
+          await sleep(600); // Rate limit fix
+          const success = await sendEmailWithRetry({
+            from: 'Restock Alert <onboarding@resend.dev>',
+            to: sub.email,
+            subject: `🎉 Back in Stock: ${productData.title}`,
+            html: `
+              <div style="padding: 20px; background-color: #f4fdf4;">
+                <h1 style="color: #28a745;">It's Back!</h1>
+                <p>Hi! Good news, the product you were waiting for is back in stock at <strong>${shop}</strong>.</p>
+                ${productHtml}
+                <br />
+                <a href="https://${shop}" style="display: inline-block; background:#000; color:#fff; padding:12px 25px; text-decoration:none; border-radius:5px; font-weight: bold;">Shop Now →</a>
+              </div>
+            `
+          });
+
+          if (success) {
+            await prisma.backInStock.update({
+              where: { id: sub.id },
+              data: { notified: true }
+            });
+            console.log(`✅ Customer Notified: ${sub.email}`);
+          }
+        }
+      } else {
+        console.log("ℹ️ No pending subscribers for this item.");
       }
     }
 
