@@ -13,10 +13,10 @@ async function sendEmail(emailData) {
     });
     const data = await res.json();
     if (!res.ok) console.error("Resend specific error:", data);
-    return res.ok;
+    return { success: res.ok, data };
   } catch (err) {
     console.error("Fetch failed:", err.message);
-    return false;
+    return { success: false, data: null };
   }
 }
 
@@ -28,14 +28,15 @@ export async function action({ request }) {
   try {
     console.log(`Checking stock for ${shop}: Item ${inventoryItemId}, Qty: ${available}`);
 
-    // Webhook se admin context directly milta hai
     const response = await admin.graphql(`
       query {
         inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
           variant {
+            id
             displayName
             price
             product {
+              id
               title
               featuredImage { url }
             }
@@ -58,10 +59,10 @@ export async function action({ request }) {
     const variantTitle = variant.displayName;
     const price = variant.price;
     const imageUrl = variant.product.featuredImage?.url || "";
+    const variantId = variant.id.split('/').pop();
+    const productId = variant.product.id.split('/').pop();
 
-    // --- IMPROVED LOGIC ---
-    
-    // Pehle check karo ki koi pending subscribers hain ya nahi
+    // Find pending subscribers
     const subscribers = await prisma.backInStock.findMany({
       where: { 
         inventoryItemId: inventoryItemId, 
@@ -72,79 +73,103 @@ export async function action({ request }) {
     console.log(`Found ${subscribers.length} pending subscribers for this item.`);
 
     if (available > 0 && subscribers.length > 0) {
-      // Stock available hai AUR subscribers bhi hain - BACK IN STOCK emails bhejo
       console.log("Sending Back in Stock emails to subscribers...");
       
-      const backInStockEmailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
-          <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🎉 Great News!</h1>
-              <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your item is back in stock</p>
-            </div>
-            
-            ${imageUrl ? `
-              <div style="text-align: center; padding: 20px; background-color: #ffffff;">
-                <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-              </div>
-            ` : ''}
-            
-            <div style="padding: 30px; background-color: #ffffff;">
-              <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
-              <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
-              
-              <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                <p style="margin: 0; color: #155724; font-weight: bold;">✅ Now Available - Limited Stock!</p>
-              </div>
-              
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
-                    <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #666666; font-size: 14px; border-top: 1px solid #dee2e6;">Status:</td>
-                    <td style="padding: 10px 0; text-align: right; font-size: 16px; font-weight: bold; color: #28a745; border-top: 1px solid #dee2e6;">In Stock ✓</td>
-                  </tr>
-                </table>
-              </div>
-              
-              <div style="text-align: center; margin-top: 30px;">
-                <a href="https://${shop}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.4);">Shop Now →</a>
-              </div>
-              
-              <p style="text-align: center; color: #999999; font-size: 13px; margin-top: 20px;">Hurry! Items may sell out quickly.</p>
-            </div>
-          </div>
-          
-          <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
-            <p>You're receiving this because you signed up for restock notifications</p>
-          </div>
-        </div>
-      `;
-      
       for (const sub of subscribers) {
-        const sent = await sendEmail({
+        // Create unique tracking URLs for each subscriber
+        const baseUrl = `https://${shop}`;
+        const trackingParams = `?bis_id=${sub.id}&variant=${variantId}`;
+        const productUrl = `${baseUrl}/products/${productId}${trackingParams}`;
+        const trackingPixelUrl = `${process.env.APP_URL || `https://notify-out-stock-production.up.railway.app`}/api/track/open?id=${sub.id}`;
+        
+        const backInStockEmailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
+            <!-- Tracking Pixel for Email Opens -->
+            <img src="${trackingPixelUrl}" width="1" height="1" style="display:none;" alt="" />
+            
+            <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🎉 Great News!</h1>
+                <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your item is back in stock</p>
+              </div>
+              
+              ${imageUrl ? `
+                <div style="text-align: center; padding: 20px; background-color: #ffffff;">
+                  <a href="${productUrl}" target="_blank">
+                    <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+                  </a>
+                </div>
+              ` : ''}
+              
+              <div style="padding: 30px; background-color: #ffffff;">
+                <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
+                <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
+                
+                <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                  <p style="margin: 0; color: #155724; font-weight: bold;">✅ Now Available - Limited Stock!</p>
+                </div>
+                
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                  <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                      <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
+                      <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 10px 0; color: #666666; font-size: 14px; border-top: 1px solid #dee2e6;">Status:</td>
+                      <td style="padding: 10px 0; text-align: right; font-size: 16px; font-weight: bold; color: #28a745; border-top: 1px solid #dee2e6;">In Stock ✓</td>
+                    </tr>
+                  </table>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px;">
+                  <a href="${productUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.4);">Shop Now →</a>
+                </div>
+                
+                <p style="text-align: center; color: #999999; font-size: 13px; margin-top: 20px;">Hurry! Items may sell out quickly.</p>
+              </div>
+            </div>
+            
+            <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
+              <p>You're receiving this because you signed up for restock notifications</p>
+              <p style="margin-top: 10px;">
+                <a href="${baseUrl}" style="color: #999999; text-decoration: underline;">Visit Store</a>
+              </p>
+            </div>
+          </div>
+        `;
+        
+        const emailResult = await sendEmail({
           from: 'Restock Alert <onboarding@resend.dev>',
           to: sub.email,
           subject: `🎉 Back in Stock: ${productTitle}`,
-          html: backInStockEmailHtml
+          html: backInStockEmailHtml,
+          // Add tags for better tracking in Resend dashboard
+          tags: [
+            { name: 'category', value: 'back-in-stock' },
+            { name: 'shop', value: shop },
+            { name: 'subscription_id', value: String(sub.id) }
+          ]
         });
 
-        if (sent) {
+        if (emailResult.success) {
           await prisma.backInStock.update({ 
             where: { id: sub.id }, 
-            data: { notified: true } 
+            data: { 
+              notified: true,
+              updatedAt: new Date()
+            } 
           });
-          console.log(`✅ Success: Mail sent to ${sub.email}`);
+          console.log(`✅ Success: Mail sent to ${sub.email} (ID: ${emailResult.data?.id})`);
+        } else {
+          console.log(`❌ Failed: Could not send to ${sub.email}`);
         }
         
+        // Rate limiting - 500ms delay between emails
         await new Promise(r => setTimeout(r, 500));
       }
     } 
     else if (available <= 0) {
-      // Stock 0 hai - Admin ko OUT OF STOCK alert bhejo
       console.log("Sending Out of Stock alert to Admin...");
       
       const outOfStockEmailHtml = `
@@ -188,7 +213,7 @@ export async function action({ request }) {
               </div>
               
               <div style="text-align: center; margin-top: 30px;">
-                <a href="https://${shop}/admin" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px;">Go to Admin Dashboard →</a>
+                <a href="https://${shop}/admin/products/${productId}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px;">View Product in Admin →</a>
               </div>
             </div>
           </div>
@@ -203,7 +228,11 @@ export async function action({ request }) {
         from: 'Stock Alert <onboarding@resend.dev>',
         to: 'digittrix.savita@gmail.com',
         subject: `🚨 Out of Stock: ${productTitle}`,
-        html: outOfStockEmailHtml
+        html: outOfStockEmailHtml,
+        tags: [
+          { name: 'category', value: 'out-of-stock-admin' },
+          { name: 'shop', value: shop }
+        ]
       });
     }
 
