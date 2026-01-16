@@ -204,7 +204,7 @@ export default function EnhancedDashboard() {
         {/* Top Navigation Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-gray-900">Restockly Insights</h1>
+            <h1 className="text-3xl font-black tracking-tight text-gray-900">Restock Insights</h1>
             <p className="text-gray-500 font-medium">Real-time stock alert performance for <span className="text-blue-600">{shop}</span></p>
           </div>
           <button className="flex items-center gap-2 bg-gray-900 text-white px-6 py-3 rounded-2xl font-bold shadow-xl hover:bg-black transition-all">
