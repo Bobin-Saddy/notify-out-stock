@@ -14,19 +14,18 @@ export async function loader({ request }) {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
-  // 1. Fetch KPI Stats (Dynamic from Database)
+  // 1. Fetch KPI Stats (Synchronized with your Webhook data)
   const [totalRequests, notificationsSent, recentSubscribersRaw] = await Promise.all([
     prisma.backInStock.count({ where: { shop } }),
     prisma.backInStock.count({ where: { shop, notified: true } }),
     prisma.backInStock.findMany({
       where: { shop },
-      take: 8,
+      take: 10,
       orderBy: { createdAt: 'desc' }
     })
   ]);
 
-  // 2. Fetch Dynamic Product Titles from Shopify API
-  // Hum database se productIds nikal kar Shopify se unke real titles mangwayenge
+  // 2. Dynamic Product Fetching (Using GraphQL for titles/images)
   const productIds = [...new Set(recentSubscribersRaw.map(s => `gid://shopify/Product/${s.productId}`))];
   
   const response = await admin.graphql(
@@ -49,7 +48,7 @@ export async function loader({ request }) {
     if (node) productMap[node.id.split('/').pop()] = node;
   });
 
-  // 3. Trend Data Logic (Dynamic)
+  // 3. Trend Logic (Requests vs Notifications)
   const historyRaw = await prisma.backInStock.findMany({
     where: { shop },
     orderBy: { createdAt: 'asc' },
@@ -73,17 +72,16 @@ export async function loader({ request }) {
     },
     recentSubscribers: recentSubscribersRaw.map(sub => ({
       ...sub,
-      productTitle: productMap[sub.productId]?.title || "Unknown Product",
+      productTitle: productMap[sub.productId]?.title || "Product Loading...",
       productImage: productMap[sub.productId]?.featuredImage?.url || ""
     })),
     trendData: Object.values(dateMap)
   });
 }
 
-export default function PremiumDashboard() {
+export default function RestocklyDashboard() {
   const { stats, recentSubscribers, trendData, shop } = useLoaderData();
-
-  const COLORS = ['#3B82F6', '#10B981', '#6366F1', '#EC4899', '#F59E0B', '#14B8A6'];
+  const COLORS = ['#3B82F6', '#10B981', '#6366F1', '#EC4899', '#F59E0B'];
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-6 md:p-12 font-sans text-slate-900">
@@ -91,136 +89,124 @@ export default function PremiumDashboard() {
 
       <div className="max-w-7xl mx-auto space-y-10">
         
-        {/* Glassmorphism Header */}
+        {/* Dynamic Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">Restockly <span className="text-blue-600">Pro</span></h1>
-            <div className="flex items-center gap-2 text-slate-500 font-medium">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              Live Insights for {shop}
+            <h1 className="text-4xl font-black tracking-tight text-slate-900 underline decoration-blue-500 decoration-4 underline-offset-8">Restockly <span className="text-blue-600 font-extrabold italic">PRO</span></h1>
+            <div className="flex items-center gap-2 text-slate-500 font-bold text-sm mt-4">
+              <span className="flex h-3 w-3 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+              </span>
+              Connected to: {shop}
             </div>
           </div>
           <div className="flex gap-3">
-            <button className="p-3 bg-white border border-slate-200 rounded-2xl shadow-sm hover:bg-slate-50 transition-all">
-              <Settings size={20} className="text-slate-600" />
-            </button>
-            <button className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold shadow-xl hover:shadow-blue-200/50 transition-all flex items-center gap-2">
-              Generate Report <ArrowUpRight size={18} />
+             <button className="bg-slate-900 text-white px-8 py-4 rounded-3xl font-black shadow-2xl hover:bg-blue-600 transition-all flex items-center gap-2 transform hover:-translate-y-1">
+              Live Monitoring <ArrowUpRight size={20} />
             </button>
           </div>
         </div>
 
-        {/* Dynamic KPI Section - Attractive Glass Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {/* Dynamic KPI Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {[
             { label: 'Requests', val: stats.totalRequests, icon: LayoutList, color: 'text-blue-600', bg: 'bg-blue-50' },
             { label: 'Sent', val: stats.notificationsSent, icon: Bell, color: 'text-emerald-600', bg: 'bg-emerald-50' },
             { label: 'Delivery', val: `${stats.deliveryRate}%`, icon: Truck, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { label: 'Open', val: '0%', icon: Eye, color: 'text-rose-600', bg: 'bg-rose-50' },
             { label: 'Clicks', val: '0%', icon: MousePointer2, color: 'text-amber-600', bg: 'bg-amber-50' },
-            { label: 'Sales', val: '0%', icon: ShoppingBag, color: 'text-teal-600', bg: 'bg-teal-50' },
+            { label: 'Converted', val: '0', icon: ShoppingBag, color: 'text-teal-600', bg: 'bg-teal-50' },
           ].map((item, idx) => (
-            <div key={idx} className="bg-white p-5 rounded-[2rem] border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-md transition-all">
-               <div className={`${item.bg} w-10 h-10 rounded-xl flex items-center justify-center mb-4`}>
-                 <item.icon size={20} className={item.color} />
+            <div key={idx} className="bg-white p-6 rounded-[2.5rem] border border-white shadow-xl shadow-slate-200/50 hover:scale-105 transition-transform">
+               <div className={`${item.bg} w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-inner`}>
+                 <item.icon size={22} className={item.color} />
                </div>
-               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{item.label}</p>
-               <p className="text-2xl font-black mt-1">{item.val}</p>
+               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{item.label}</p>
+               <p className="text-3xl font-black text-slate-900 tracking-tighter">{item.val}</p>
             </div>
           ))}
         </div>
 
-        {/* Analytics Section */}
+        {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Main Chart - Dynamic Bar Analytics */}
-          <div className="lg:col-span-8 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
-            <div className="flex justify-between items-center mb-10">
-              <h3 className="text-xl font-black">Performance Analytics</h3>
-              <select className="text-xs font-bold border-none bg-slate-50 p-2 rounded-lg outline-none cursor-pointer"><option>Last 30 Days</option></select>
-            </div>
+          <div className="lg:col-span-8 bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-100">
+            <h3 className="text-2xl font-black mb-10 tracking-tight">Demand vs Supply <span className="text-slate-300 text-sm font-bold ml-2">/ Daily Trend</span></h3>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 700, fill: '#94A3B8'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 700, fill: '#94A3B8'}} />
-                  <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} />
-                  <Bar dataKey="Requests" fill="#3B82F6" radius={[10, 10, 10, 10]} barSize={12}>
-                    {trendData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 800, fill: '#94A3B8'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 800, fill: '#94A3B8'}} />
+                  <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.15)'}} />
+                  <Bar dataKey="Requests" fill="#3B82F6" radius={[10, 10, 10, 10]} barSize={14}>
+                    {trendData.map((entry, index) => <Cell key={`c-${index}`} fill={COLORS[index % COLORS.length]} />)}
                   </Bar>
-                  <Bar dataKey="Notifications" fill="#E2E8F0" radius={[10, 10, 10, 10]} barSize={12} />
+                  <Bar dataKey="Notifications" fill="#E2E8F0" radius={[10, 10, 10, 10]} barSize={14} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Funnel Section - Real-time Progress */}
-          <div className="lg:col-span-4 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 flex flex-col justify-between">
-            <h3 className="text-xl font-black mb-6">Live Funnel</h3>
-            <div className="space-y-6">
+          <div className="lg:col-span-4 bg-white p-10 rounded-[3.5rem] shadow-sm border border-slate-100">
+            <h3 className="text-2xl font-black mb-8 tracking-tight text-center">Live Funnel</h3>
+            <div className="space-y-8 mt-4">
               {[
-                { label: 'Captured', val: stats.totalRequests, color: 'bg-blue-500' },
-                { label: 'Notified', val: stats.notificationsSent, color: 'bg-emerald-500' },
-                { label: 'Converted', val: 0, color: 'bg-slate-200' }
+                { label: 'Requests', val: stats.totalRequests, color: 'bg-blue-500' },
+                { label: 'Sent', val: stats.notificationsSent, color: 'bg-emerald-500' },
+                { label: 'Sales', val: 0, color: 'bg-slate-200' }
               ].map((f, i) => (
-                <div key={i} className="space-y-2">
-                  <div className="flex justify-between text-[11px] font-bold uppercase text-slate-400">
-                    <span>{f.label}</span>
-                    <span className="text-slate-900 font-black">{f.val}</span>
-                  </div>
-                  <div className="w-full h-4 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
-                    <div className={`${f.color} h-full transition-all duration-1000`} style={{ width: f.val > 0 ? '85%' : '8%' }}></div>
+                <div key={i} className="text-center">
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">{f.label}</p>
+                  <p className="text-3xl font-black mb-3">{f.val}</p>
+                  <div className="w-full h-5 bg-slate-50 rounded-full border border-slate-100 p-1">
+                    <div className={`${f.color} h-full rounded-full shadow-lg`} style={{ width: f.val > 0 ? '90%' : '10%' }}></div>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="mt-8 p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center">
-              <p className="text-[10px] text-slate-400 font-bold uppercase">Conversion Goal</p>
-              <p className="text-lg font-black text-slate-700">Not Calculated Yet</p>
-            </div>
           </div>
         </div>
 
-        {/* Dynamic Subscribers Table - With Product Images */}
-        <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden">
-          <div className="p-8 border-b border-slate-50 flex items-center justify-between">
-            <h3 className="text-xl font-black text-slate-900">Recent Activity Log</h3>
-            <div className="flex gap-2">
-              <div className="bg-blue-50 text-blue-600 p-2 rounded-xl"><Search size={16}/></div>
+        {/* Dynamic Activity Table */}
+        <div className="bg-white rounded-[4rem] shadow-2xl shadow-slate-200 border border-slate-50 overflow-hidden">
+          <div className="p-10 border-b border-slate-50 flex items-center justify-between">
+            <h3 className="text-2xl font-black text-slate-900">Live Activity Feed</h3>
+            <div className="bg-emerald-50 text-emerald-600 px-6 py-2 rounded-full text-xs font-black uppercase flex items-center gap-2">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> Receiving Events
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto px-6 pb-10">
             <table className="w-full text-left">
               <thead>
-                <tr className="bg-slate-50/50 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  <th className="px-10 py-5">Product Details</th>
-                  <th className="px-10 py-5">Subscriber</th>
-                  <th className="px-10 py-5 text-center">Channel</th>
-                  <th className="px-10 py-5 text-center">Status</th>
-                  <th className="px-10 py-5 text-right">Time</th>
+                <tr className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">
+                  <th className="px-8 py-8 text-center">Image</th>
+                  <th className="px-8 py-8">Product Information</th>
+                  <th className="px-8 py-8">Customer Email</th>
+                  <th className="px-8 py-8 text-center">Event Status</th>
+                  <th className="px-8 py-8 text-right">Time</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50 text-sm">
+              <tbody className="divide-y divide-slate-50 text-sm font-bold">
                 {recentSubscribers.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-slate-50/80 transition-all group">
-                    <td className="px-10 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-200">
-                          {sub.productImage ? <img src={sub.productImage} alt="Product" className="object-cover w-full h-full" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-300">N/A</div>}
-                        </div>
-                        <p className="font-bold text-slate-800 line-clamp-1">{sub.productTitle}</p>
+                  <tr key={sub.id} className="hover:bg-slate-50/50 transition-all rounded-3xl group">
+                    <td className="px-8 py-6">
+                      <div className="w-16 h-16 rounded-[1.5rem] bg-slate-100 mx-auto overflow-hidden border-4 border-white shadow-md">
+                        {sub.productImage ? <img src={sub.productImage} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px]">NO IMG</div>}
                       </div>
                     </td>
-                    <td className="px-10 py-6 font-semibold text-blue-600">{sub.email}</td>
-                    <td className="px-10 py-6 text-center text-slate-400 font-black">Email</td>
-                    <td className="px-10 py-6 text-center">
-                      <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider ${sub.notified ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-600'}`}>
-                        {sub.notified ? 'Delivered' : 'Queueing'}
+                    <td className="px-8 py-6">
+                      <p className="text-slate-900 text-lg tracking-tight mb-1">{sub.productTitle}</p>
+                      <p className="text-xs text-slate-400">ID: {sub.productId}</p>
+                    </td>
+                    <td className="px-8 py-6 text-blue-600 font-black text-base">{sub.email}</td>
+                    <td className="px-8 py-6 text-center">
+                      <span className={`px-6 py-2 rounded-full text-[10px] font-black uppercase shadow-sm ${sub.notified ? 'bg-emerald-500 text-white shadow-emerald-200' : 'bg-amber-100 text-amber-600'}`}>
+                        {sub.notified ? 'Delivered ✓' : 'Monitoring •'}
                       </span>
                     </td>
-                    <td className="px-10 py-6 text-right text-slate-400 font-bold italic">
-                      {new Date(sub.createdAt).toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}
+                    <td className="px-8 py-6 text-right text-slate-400 font-extrabold italic">
+                      {new Date(sub.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                     </td>
                   </tr>
                 ))}
