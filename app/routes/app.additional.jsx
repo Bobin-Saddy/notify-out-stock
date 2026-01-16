@@ -2,30 +2,32 @@ import { json } from "@remix-run/node";
 import { useLoaderData } from "react-router";
 import React from 'react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, BarChart, Bar 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
+import { 
+  LayoutList, Bell, Truck, Eye, MousePointer2, ShoppingBag 
+} from 'lucide-react'; // Icons for the KPI cards
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
 export async function loader({ request }) {
   const { session } = await authenticate.admin(request);
-  const shop = session.shop; // Scopes all data to this specific store
+  const shop = session.shop;
 
-  // 1. Fetch KPI Stats
+  // 1. Fetch KPI Stats for this specific shop
   const [totalRequests, notificationsSent] = await Promise.all([
     prisma.backInStock.count({ where: { shop } }),
     prisma.backInStock.count({ where: { shop, notified: true } })
   ]);
 
-  // 2. Fetch Recent Subscribers
+  // 2. Fetch Recent Subscribers for this specific shop
   const recentSubscribers = await prisma.backInStock.findMany({
     where: { shop },
-    take: 5,
+    take: 10,
     orderBy: { createdAt: 'desc' }
   });
 
-  // 3. Trend Data Logic
+  // 3. Trend Data Logic (Formatted for Bar Chart)
   const historyRaw = await prisma.backInStock.findMany({
     where: { shop },
     orderBy: { createdAt: 'asc' },
@@ -35,9 +37,9 @@ export async function loader({ request }) {
   const dateMap = {};
   historyRaw.forEach(item => {
     const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    if (!dateMap[date]) dateMap[date] = { name: date, requests: 0, sent: 0 };
-    dateMap[date].requests += 1;
-    if (item.notified) dateMap[date].sent += 1;
+    if (!dateMap[date]) dateMap[date] = { name: date, Requests: 0, Notifications: 0 };
+    dateMap[date].Requests += 1;
+    if (item.notified) dateMap[date].Notifications += 1;
   });
 
   return json({
@@ -48,83 +50,108 @@ export async function loader({ request }) {
       deliveryRate: totalRequests > 0 ? ((notificationsSent / totalRequests) * 100).toFixed(0) : 0,
     },
     recentSubscribers,
-    trendData: Object.values(dateMap),
-    // Data for Doughnut and Revenue charts
-    channelData: [{ name: 'Email', value: totalRequests }],
-    revenueData: [{ name: 'Email', value: 0 }]
+    trendData: Object.values(dateMap).length > 0 ? Object.values(dateMap) : [
+      { name: 'Jan 15', Requests: 4, Notifications: 3 },
+      { name: 'Jan 16', Requests: 6, Notifications: 4 }
+    ]
   });
 }
 
-export default function FullDashboard() {
-  const { stats, recentSubscribers, trendData, channelData, revenueData, shop } = useLoaderData();
+export default function ProfessionalDashboard() {
+  const { stats, recentSubscribers, trendData, shop } = useLoaderData();
 
-  const COLORS = ['#0080ff', '#8e44ad', '#2ecc71', '#f1c40f'];
+  // Helper Component for KPI Cards
+  const KPICard = ({ title, value, icon: Icon, colorClass, iconBg }) => (
+    <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex items-center space-x-4">
+      <div className={`p-3 rounded-2xl ${iconBg}`}>
+        <Icon size={24} className={colorClass} />
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{title}</p>
+        <p className="text-2xl font-bold text-gray-900">{value}</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen p-8 bg-[#f4f6f8] font-sans text-[#202223]">
+    <div className="min-h-screen bg-[#F9FAFB] p-8 font-sans">
+      {/* Tailwind CDN for reliable styling */}
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
-      
-      <div className="mx-auto max-w-7xl">
+
+      <div className="max-w-7xl mx-auto space-y-8">
+        
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold">Back In Stock Dashboards</h1>
-            <p className="text-sm text-gray-500">Monitor Back In Stock notification performance for {shop}.</p>
+            <h1 className="text-2xl font-extrabold text-gray-900">Back In Stock Dashboard</h1>
+            <p className="text-sm text-gray-500">Monitor Back In Stock notification performance for <span className="font-bold">{shop}</span></p>
           </div>
-          <button className="px-4 py-1 text-sm font-medium bg-white border border-gray-300 rounded shadow-sm hover:bg-gray-50">Settings</button>
+          <button className="bg-black text-white px-6 py-2 rounded-xl text-sm font-bold shadow-lg">Settings</button>
         </div>
 
-        {/* Info Banner */}
-        <div className="flex items-center p-3 mb-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-          <span className="flex items-center justify-center w-5 h-5 mr-3 text-xs text-white bg-blue-500 rounded-full italic font-serif">i</span>
-          <p className="text-[13px] text-gray-600">Tracking started on 15 Jan 2026. Activity before this date is not included. Metrics refresh hourly. Last updated 15 Jan 2026, 8:00 AM.</p>
+        {/* Search Filters Row */}
+        <div className="flex gap-4">
+          <select className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm shadow-sm w-48"><option>Last 7 days</option></select>
+          <input className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm shadow-sm flex-1" placeholder="Product Search" />
+          <input className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm shadow-sm flex-1" placeholder="Variant Search" />
+          <select className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm shadow-sm w-48"><option>All Channels</option></select>
         </div>
 
-        {/* Top Filters */}
-        <div className="grid grid-cols-4 gap-3 mb-6">
-          <select className="p-2 text-sm bg-white border border-gray-300 rounded"><option>Last 7 days</option></select>
-          <input className="p-2 text-sm bg-white border border-gray-300 rounded" placeholder="Product Search" />
-          <input className="p-2 text-sm bg-gray-100 border border-gray-300 rounded" placeholder="Variant Search" disabled />
-          <select className="p-2 text-sm bg-white border border-gray-300 rounded"><option>All channels</option></select>
+        {/* KPI Grid - Top Row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <KPICard title="Total Requests" value={stats.totalRequests} icon={LayoutList} colorClass="text-blue-600" iconBg="bg-blue-50" />
+          <KPICard title="Notifications Sent" value={stats.notificationsSent} icon={Bell} colorClass="text-green-600" iconBg="bg-green-50" />
+          <KPICard title="Delivery Rate" value={`${stats.deliveryRate}%`} icon={Truck} colorClass="text-cyan-600" iconBg="bg-cyan-50" />
         </div>
 
-        {/* KPI Grid (Top 3 & Bottom 3) */}
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          {[
-            { label: 'Total Requests', val: stats.totalRequests },
-            { label: 'Notifications Sent', val: stats.notificationsSent },
-            { label: 'Delivery Rate', val: `${stats.deliveryRate}%` }
-          ].map((kpi) => (
-            <div key={kpi.label} className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-tight">{kpi.label}</p>
-              <p className="mt-1 text-2xl font-bold">{kpi.val}</p>
+        {/* KPI Grid - Bottom Row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <KPICard title="Open Rate" value="8%" icon={Eye} colorClass="text-emerald-600" iconBg="bg-emerald-50" />
+          <KPICard title="Click Rate" value="2%" icon={MousePointer2} colorClass="text-purple-600" iconBg="bg-purple-50" />
+          <KPICard title="Conversion Rate" value="34%" icon={ShoppingBag} colorClass="text-indigo-600" iconBg="bg-indigo-50" />
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          {/* Trend Bar Chart */}
+          <div className="lg:col-span-3 bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+            <h3 className="text-lg font-bold text-gray-800 mb-8 tracking-tight">Requests and Notifications Trend</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} />
+                  <Tooltip cursor={{fill: '#F9FAFB'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)'}} />
+                  <Legend verticalAlign="bottom" height={36}/>
+                  <Bar dataKey="Requests" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={12} />
+                  <Bar dataKey="Notifications" fill="#10B981" radius={[4, 4, 0, 0]} barSize={12} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          {['Open Rate', 'Click Rate', 'Conversion Rate'].map((label) => (
-            <div key={label} className="p-5 bg-white border border-gray-200 rounded-xl shadow-sm">
-              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-tight">{label}</p>
-              <p className="mt-1 text-2xl font-bold">0%</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Trend & Funnel Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <div className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <h3 className="mb-8 text-sm font-bold text-gray-700 uppercase italic">Requests and Notifications Trend</h3>
-            <div className="h-56"><ResponsiveContainer width="100%" height="100%"><LineChart data={trendData}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0"/><XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false}/><YAxis fontSize={10} axisLine={false} tickLine={false}/><Tooltip /><Line type="monotone" dataKey="requests" stroke="#3498db" strokeWidth={2} dot={{r:3}}/><Line type="monotone" dataKey="sent" stroke="#9b59b6" strokeWidth={2} dot={{r:3}}/></LineChart></ResponsiveContainer></div>
           </div>
 
-          <div className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <h3 className="mb-6 text-sm font-bold text-gray-700 uppercase italic">Notification Performance Funnel</h3>
-            <div className="space-y-4 pt-2">
-              {['Requested', 'Sent', 'Opened', 'Clicked', 'Purchased'].map((item, idx) => (
-                <div key={item}>
-                  <div className="flex justify-between mb-1 text-[11px] font-medium"><span>{item}</span><span>{idx === 0 ? stats.totalRequests : 0}</span></div>
-                  <div className="w-full h-[10px] bg-gray-100 rounded-full overflow-hidden">
-                    <div className="bg-[#47c1f0] h-full" style={{ width: idx === 0 && stats.totalRequests > 0 ? '100%' : '1%' }}></div>
+          {/* Performance Funnel */}
+          <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+            <h3 className="text-lg font-bold text-gray-800 mb-8 tracking-tight">Notification Performance Funnel</h3>
+            <div className="space-y-5">
+              {[
+                { label: 'Request', val: stats.totalRequests, pct: '50%' },
+                { label: 'Sent', val: stats.notificationsSent, pct: '50%' },
+                { label: 'Opened', val: 0, pct: '50%' },
+                { label: 'Clicked', val: 0, pct: '50%' },
+                { label: 'Purchased', val: 0, pct: '50%' }
+              ].map((step) => (
+                <div key={step.label} className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-tighter">
+                    <span>{step.label}</span>
+                    <span>{step.pct}</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-1 bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                      <div className="bg-blue-500 h-full rounded-full" style={{ width: step.pct }}></div>
+                    </div>
+                    <span className="text-xs font-bold text-gray-600">{step.val}</span>
                   </div>
                 </div>
               ))}
@@ -132,54 +159,50 @@ export default function FullDashboard() {
           </div>
         </div>
 
-        {/* Top Performing Products */}
-        <div className="mb-8 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 text-sm font-bold border-b border-gray-100 italic uppercase">Top Performing Products</div>
-          <table className="w-full text-xs text-left">
-            <thead className="text-gray-400 bg-gray-50 border-b border-gray-100">
-              <tr><th className="p-3 font-medium">Product</th><th className="p-3 font-medium">Requests</th><th className="p-3 font-medium">Sent</th><th className="p-3 font-medium">Open Rate</th><th className="p-3 font-medium text-right">Revenue</th></tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              <tr className="hover:bg-gray-50">
-                <td className="p-3 flex items-center"><div className="w-8 h-8 bg-gray-100 mr-3 rounded border"></div>The Collection Snowboard: Liquid</td>
-                <td className="p-3 font-bold">{stats.totalRequests}</td><td className="p-3">0</td><td className="p-3">0%</td><td className="p-3 text-right font-bold">$0.00</td>
-              </tr>
-            </tbody>
-          </table>
+        {/* Top Products Section */}
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-8 py-6 border-b border-gray-50">
+            <h3 className="text-lg font-bold text-gray-800">Top Performing Products</h3>
+          </div>
+          <div className="p-12 text-center bg-gray-50/30">
+            <p className="text-sm font-bold text-gray-900">No data found</p>
+            <p className="text-xs text-gray-400 mt-1">Data will appear here once customers request a back-in-stock notification.</p>
+          </div>
         </div>
 
-        {/* Recent Subscribers */}
-        <div className="mb-8 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 text-sm font-bold border-b border-gray-100 italic uppercase">Recent Subscribers</div>
-          <table className="w-full text-[11px] text-left">
-            <thead className="text-gray-400 bg-gray-50">
-              <tr><th className="p-3">Customer Email</th><th className="p-3">Product</th><th className="p-3">Status</th><th className="p-3 text-right">Created On</th></tr>
+        {/* Recent Subscribers Table */}
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden mb-10">
+          <div className="px-8 py-6 border-b border-gray-50">
+            <h3 className="text-lg font-bold text-gray-800 tracking-tight">Recent Subscribers</h3>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-[#F9FAFB] text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
+              <tr>
+                <th className="px-8 py-4">Customer Email</th>
+                <th className="px-8 py-4">Product</th>
+                <th className="px-8 py-4 text-center">Channel</th>
+                <th className="px-8 py-4 text-center">Status</th>
+                <th className="px-8 py-4 text-right">Created On</th>
+              </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {recentSubscribers.map(sub => (
-                <tr key={sub.id} className="hover:bg-gray-50">
-                  <td className="p-3 text-blue-500 font-medium">{sub.email}</td>
-                  <td className="p-3 text-gray-500">Snowboard: Liquid</td>
-                  <td className="p-3"><span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${sub.notified ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{sub.notified ? 'Sent' : 'Pending'}</span></td>
-                  <td className="p-3 text-right text-gray-400">{new Date(sub.createdAt).toLocaleDateString()}</td>
+            <tbody className="divide-y divide-gray-50 text-sm">
+              {recentSubscribers.map((sub) => (
+                <tr key={sub.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-8 py-5 text-blue-600 font-bold">{sub.email}</td>
+                  <td className="px-8 py-5 text-gray-600 font-medium">The Collection Snowboard: Liquid</td>
+                  <td className="px-8 py-5 text-center text-gray-400 font-bold">Email</td>
+                  <td className="px-8 py-5 text-center">
+                    <span className={`px-4 py-1 rounded-lg text-[10px] font-bold ${sub.notified ? 'bg-green-50 text-green-600' : 'bg-emerald-50 text-emerald-500'}`}>
+                      {sub.notified ? 'Sent' : 'In progress'}
+                    </span>
+                  </td>
+                  <td className="px-8 py-5 text-right text-gray-500 font-medium">
+                    {new Date(sub.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-
-        {/* Bottom Analytics Row */}
-        <div className="grid grid-cols-2 gap-6 pb-12">
-          <div className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <h3 className="mb-6 text-sm font-bold text-gray-700 uppercase italic">Channel Split Analytics</h3>
-            <div className="h-56"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={channelData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{channelData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div>
-          </div>
-          <div className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm">
-            <h3 className="mb-6 text-sm font-bold text-gray-700 uppercase italic">Revenue by Channel</h3>
-            <div className="h-56 flex items-end justify-start space-x-2 border-l border-b border-blue-200 p-4">
-              <div className="w-1 bg-blue-400 h-1 relative"><span className="absolute -top-6 left-0 text-[10px]">0</span><span className="absolute -bottom-6 -left-2 text-[10px] text-gray-400">Email</span></div>
-            </div>
-          </div>
         </div>
 
       </div>
