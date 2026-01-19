@@ -128,10 +128,12 @@ export async function loader({ request }) {
   allRecords.forEach(item => {
     const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     if (!dateMap[date]) {
-      dateMap[date] = { name: date, Requests: 0, Notifications: 0 };
+      dateMap[date] = { name: date, Requests: 0, Sent: 0, Opens: 0, Clicks: 0 };
     }
     dateMap[date].Requests += 1;
-    if (item.notified) dateMap[date].Notifications += 1;
+    if (item.notified) dateMap[date].Sent += 1;
+    if (item.opened) dateMap[date].Opens += 1;
+    if (item.clicked) dateMap[date].Clicks += 1;
   });
 
   const conversionRate = notificationsSent > 0 ? ((emailsClicked / notificationsSent) * 100).toFixed(1) : 0;
@@ -185,7 +187,7 @@ export default function Dashboard() {
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
       
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header (Original Structure) */}
+        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-3xl font-black text-gray-900 tracking-tight mb-2">Back In Stock Analytics</h1>
@@ -201,27 +203,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Filters (Original Structure) */}
-        {showFilters && (
-          <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
-            <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="md:col-span-2">
-                <div className="relative">
-                  <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input type="text" name="search" value={searchValue} onChange={(e) => setSearchValue(e.target.value)} placeholder="Email or variant ID..." className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl" />
-                </div>
-              </div>
-              <select name="dateRange" defaultValue={filters.dateRange} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
-                <option value="7">Last 7 Days</option>
-                <option value="30">Last 30 Days</option>
-                <option value="all">All Time</option>
-              </select>
-              <button type="submit" className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md">Apply</button>
-            </form>
-          </div>
-        )}
-
-        {/* Metric Cards (Original Structure) */}
+        {/* Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard title="Total Requests" value={stats.totalRequests.toLocaleString()} icon={ShoppingBag} gradient="bg-gradient-to-br from-blue-500 to-blue-600" trend="+12%" />
           <MetricCard title="Sent" value={stats.notificationsSent.toLocaleString()} icon={Bell} gradient="bg-gradient-to-br from-green-500 to-green-600" trend="+8%" />
@@ -229,11 +211,11 @@ export default function Dashboard() {
           <MetricCard title="CTR" value={`${stats.conversionRate}%`} icon={MousePointer2} gradient="bg-gradient-to-br from-purple-500 to-purple-600" />
         </div>
 
-        {/* CHARTS SECTION (Updated to Bar Charts) */}
+        {/* CHARTS SECTION - 4 BARS & FUNNEL */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Trend Bar Chart */}
+          {/* Main Trend Bar Chart with 4 BARS */}
           <div className="lg:col-span-2 bg-white p-8 rounded-2xl shadow-lg border border-gray-50">
-            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-6">Requests and Notifications Trend</h3>
+            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-6">Activity Trends (Requests, Sent, Opens, Clicks)</h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -242,22 +224,24 @@ export default function Dashboard() {
                   <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#94A3B8'}} />
                   <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
                   <Legend iconType="circle" wrapperStyle={{paddingTop: '20px', fontSize: '12px', fontWeight: 'bold'}} />
-                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={12} />
-                  <Bar name="Notifications" dataKey="Notifications" fill="#10b981" radius={[4, 4, 0, 0]} barSize={12} />
+                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                  <Bar name="Sent" dataKey="Sent" fill="#10b981" radius={[2, 2, 0, 0]} />
+                  <Bar name="Opens" dataKey="Opens" fill="#ec4899" radius={[2, 2, 0, 0]} />
+                  <Bar name="Clicks" dataKey="Clicks" fill="#8b5cf6" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Performance Funnel (Updated as per Image) */}
+          {/* Performance Funnel */}
           <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-50">
             <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-8">Notification Performance Funnel</h3>
             <div className="space-y-6">
               {[
-                { label: 'Requests', val: stats.totalRequests, color: 'bg-blue-500' },
-                { label: 'Sent', val: stats.notificationsSent, color: 'bg-blue-500' },
-                { label: 'Opened', val: stats.emailsOpened, color: 'bg-blue-500' },
-                { label: 'Clicked', val: stats.emailsClicked, color: 'bg-blue-500' }
+                { label: 'Requests', val: stats.totalRequests },
+                { label: 'Sent', val: stats.notificationsSent },
+                { label: 'Opened', val: stats.emailsOpened },
+                { label: 'Clicked', val: stats.emailsClicked }
               ].map((item, idx) => {
                 const percentage = stats.totalRequests > 0 ? (item.val / stats.totalRequests) * 100 : 0;
                 return (
@@ -267,7 +251,7 @@ export default function Dashboard() {
                       <span className="text-gray-400">{percentage.toFixed(0)}%</span>
                     </div>
                     <div className="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                      <div className={`h-full ${item.color} rounded-full transition-all duration-1000`} style={{ width: `${Math.max(percentage, 2)}%` }}></div>
+                      <div className="h-full bg-blue-500 rounded-full transition-all duration-1000" style={{ width: `${Math.max(percentage, 2)}%` }}></div>
                     </div>
                   </div>
                 );
@@ -276,55 +260,62 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Top Products (Original Structure) */}
-        <div className="bg-white p-8 rounded-2xl shadow-lg">
-          <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-6">Top Requested Products</h3>
-          <div className="space-y-4">
-            {topProducts.map((product, idx) => (
-              <div key={idx} className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-xl transition-colors">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">#{idx+1}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-gray-900 truncate">{product.productTitle}</p>
-                  <p className="text-xs text-gray-500 truncate">{product.variantTitle}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-black text-gray-900">{product.count}</p>
-                  <p className="text-[10px] text-gray-400 uppercase font-bold">Requests</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent Subscribers Table (Original Structure) */}
+        {/* PURANA TABLE STRUCTURE (Engagement columns included) */}
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
-          <div className="px-8 py-6 border-b border-gray-100">
-            <h3 className="text-sm font-black uppercase tracking-wider text-gray-800">Recent Requests</h3>
+          <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-gray-800">Recent Requests</h3>
+              <p className="text-xs text-gray-500 mt-1">Latest back-in-stock notifications</p>
+            </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-widest">
+            <table className="w-full">
+              <thead className="bg-gradient-to-r from-gray-50 to-blue-50">
                 <tr>
-                  <th className="px-8 py-4">Customer</th>
-                  <th className="px-8 py-4">Product Details</th>
-                  <th className="px-8 py-4">Status</th>
-                  <th className="px-8 py-4 text-right">Date</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Customer</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Product Details</th>
+                  <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-wider">Engagement</th>
+                  <th className="px-6 py-4 text-right text-xs font-black text-gray-600 uppercase tracking-wider">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {recentSubscribers.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-blue-50/50 transition-colors">
-                    <td className="px-8 py-5 text-sm font-bold text-gray-900">{sub.email}</td>
-                    <td className="px-8 py-5">
-                      <p className="text-sm font-bold text-gray-900">{sub.productTitle}</p>
+                  <tr key={sub.id} className="hover:bg-blue-50 transition-colors group">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white font-black text-sm">
+                          {sub.email.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">{sub.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <p className="text-sm font-bold text-gray-900 truncate max-w-[200px]">{sub.productTitle}</p>
                       <p className="text-xs text-gray-500">{sub.variantTitle}</p>
                     </td>
-                    <td className="px-8 py-5">
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${sub.notified ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                    <td className="px-6 py-5 text-center">
+                      <span className={`inline-flex items-center px-3 py-1.5 rounded-xl text-[10px] font-black uppercase ${
+                        sub.notified ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                      }`}>
                         {sub.notified ? 'Notified' : 'Pending'}
                       </span>
                     </td>
-                    <td className="px-8 py-5 text-right text-sm font-bold text-gray-500">{new Date(sub.createdAt).toLocaleDateString()}</td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${sub.opened ? 'bg-pink-50 text-pink-600 border border-pink-200' : 'bg-gray-50 text-gray-400'}`}>
+                          {sub.opened ? '✓ Opened' : '○ Unopened'}
+                        </span>
+                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${sub.clicked ? 'bg-purple-50 text-purple-600 border border-purple-200' : 'bg-gray-50 text-gray-400'}`}>
+                          {sub.clicked ? '✓ Clicked' : '○ No Click'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5 text-right">
+                      <p className="text-sm font-bold text-gray-900">{new Date(sub.createdAt).toLocaleDateString()}</p>
+                    </td>
                   </tr>
                 ))}
               </tbody>
