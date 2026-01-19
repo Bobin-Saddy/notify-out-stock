@@ -25,8 +25,9 @@ export async function action({ request }) {
   const inventoryItemId = String(payload.inventory_item_id);
   const available = Number(payload.available);
   
-  // App URL setup for tracking
-  const APP_URL = process.env.SHOPIFY_APP_URL || "https://notify-out-stock-production.up.railway.app/";
+  // App URL ensure trailing slash is handled
+  let APP_URL = process.env.SHOPIFY_APP_URL || "https://notify-out-stock-production.up.railway.app/";
+  if (!APP_URL.endsWith('/')) APP_URL += '/';
 
   try {
     console.log(`Checking stock for ${shop}: Item ${inventoryItemId}, Qty: ${available}`);
@@ -52,10 +53,7 @@ export async function action({ request }) {
     const variant = json.data?.inventoryItem?.variant;
     const currency = json.data?.shop?.currencyCode || "USD";
 
-    if (!variant) {
-      console.log("No variant found for this inventory item.");
-      return new Response("Variant not found", { status: 200 });
-    }
+    if (!variant) return new Response("Variant not found", { status: 200 });
 
     const productTitle = variant.product.title;
     const variantTitle = variant.displayName;
@@ -63,88 +61,64 @@ export async function action({ request }) {
     const imageUrl = variant.product.featuredImage?.url || "";
     const productHandle = variant.product.handle;
 
-    const subscribers = await prisma.backInStock.findMany({
-      where: { 
-        inventoryItemId: inventoryItemId, 
-        notified: false 
-      },
-    });
+    // --- CASE 1: STOCK IS BACK (Send to Customers) ---
+    if (available > 0) {
+      const subscribers = await prisma.backInStock.findMany({
+        where: { inventoryItemId: inventoryItemId, notified: false },
+      });
 
-    console.log(`Found ${subscribers.length} pending subscribers for this item.`);
+      if (subscribers.length > 0) {
+        for (const sub of subscribers) {
+          const openTrackingUrl = `${APP_URL}api/track-open?id=${sub.id}`;
+          const targetStoreUrl = `https://${shop}/products/${productHandle}`;
+          const clickTrackingUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(targetStoreUrl)}`;
 
-    if (available > 0 && subscribers.length > 0) {
-      console.log("Sending Back in Stock emails to subscribers...");
-      
-      for (const sub of subscribers) {
-        
-        // --- TRACKING LINKS LOGIC ---
-        const openTrackingUrl = `${APP_URL}api/track-open?id=${sub.id}`;
-        const targetStoreUrl = `https://${shop}/products/${productHandle}`;
-        const clickTrackingUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(targetStoreUrl)}`;
-
-        const backInStockEmailHtml = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
-            <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🎉 Great News!</h1>
-                <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your item is back in stock</p>
+          const backInStockHtml = `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; padding: 20px;">
+              <h1 style="text-align: center; color: #764ba2;">🎉 Back in Stock!</h1>
+              ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; max-width: 200px; display: block; margin: 0 auto;" />` : ''}
+              <h2 style="text-align: center;">${productTitle}</h2>
+              <p style="text-align: center; color: #666;">${variantTitle} is now available for ${currency} ${price}</p>
+              <div style="text-align: center; margin-top: 20px;">
+                <a href="${clickTrackingUrl}" style="background: #764ba2; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Shop Now</a>
               </div>
-              
-              ${imageUrl ? `
-                <div style="text-align: center; padding: 20px; background-color: #ffffff;">
-                  <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-                </div>
-              ` : ''}
-              
-              <div style="padding: 30px; background-color: #ffffff;">
-                <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
-                <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
-                
-                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                  <table style="width: 100%; border-collapse: collapse;">
-                    <tr>
-                      <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
-                      <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
-                    </tr>
-                  </table>
-                </div>
-                
-                <div style="text-align: center; margin-top: 30px;">
-                  <a href="${clickTrackingUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.4);">Shop Now →</a>
-                </div>
-              </div>
+              <img src="${openTrackingUrl}" width="1" height="1" style="display:none !important;" />
             </div>
-            
-            <img src="${openTrackingUrl}" width="1" height="1" style="display:none !important;" />
-            
-            <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
-              <p>You're receiving this because you signed up for restock notifications</p>
-            </div>
-          </div>
-        `;
-        
-        const sent = await sendEmail({
-          from: 'Restock Alert <onboarding@resend.dev>',
-          to: sub.email,
-          subject: `🎉 Back in Stock: ${productTitle}`,
-          html: backInStockEmailHtml
-        });
+          `;
 
-        if (sent) {
-          await prisma.backInStock.update({ 
-            where: { id: sub.id }, 
-            data: { notified: true } 
+          const sent = await sendEmail({
+            from: 'Restock Alert <onboarding@resend.dev>',
+            to: sub.email,
+            subject: `🎉 Back in Stock: ${productTitle}`,
+            html: backInStockHtml
           });
-          console.log(`✅ Success: Mail sent to ${sub.email}`);
+
+          if (sent) {
+            await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
+          }
+          await new Promise(r => setTimeout(r, 500));
         }
-        
-        await new Promise(r => setTimeout(r, 500));
       }
     } 
+    
+    // --- CASE 2: STOCK IS ZERO (Send to Admin) ---
     else if (available <= 0) {
-      // Admin Out of Stock Email (No change needed here)
       console.log("Sending Out of Stock alert to Admin...");
-      // ... (Your existing admin email logic)
+      const outOfStockHtml = `
+        <div style="font-family: sans-serif; padding: 20px; border: 2px solid #ff6b6b;">
+          <h2 style="color: #ff6b6b;">🚨 Out of Stock Alert</h2>
+          <p>The following item just hit 0 stock on your store <strong>${shop}</strong>:</p>
+          <p><strong>Product:</strong> ${productTitle}<br><strong>Variant:</strong> ${variantTitle}</p>
+          <a href="https://${shop}/admin" style="color: #667eea;">View in Shopify Admin</a>
+        </div>
+      `;
+
+      await sendEmail({
+        from: 'Stock Alert <onboarding@resend.dev>',
+        to: 'digittrix.savita@gmail.com', // Aapki Admin ID
+        subject: `🚨 Out of Stock: ${productTitle}`,
+        html: outOfStockHtml
+      });
     }
 
     return new Response("OK", { status: 200 });
