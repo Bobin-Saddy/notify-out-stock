@@ -44,7 +44,7 @@ export async function loader({ request }) {
     emailsClicked,
     allRecords,
     recentSubscribers,
-    topProducts
+    allProductRecords
   ] = await Promise.all([
     prisma.backInStock.count({ where: whereClause }),
     prisma.backInStock.count({ where: { ...whereClause, notified: true } }),
@@ -60,14 +60,36 @@ export async function loader({ request }) {
       take: 20, 
       orderBy: { createdAt: 'desc' } 
     }),
-    prisma.backInStock.groupBy({
-      by: ['productTitle', 'variantTitle'],
+    prisma.backInStock.findMany({
       where: whereClause,
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: 5
+      select: { productTitle: true, variantTitle: true, variantId: true }
     })
   ]);
+
+  // Process top products manually
+  const productCounts = {};
+  allProductRecords.forEach(record => {
+    const key = `${record.productTitle || 'Unknown'}|${record.variantTitle || 'Default'}|${record.variantId || ''}`;
+    if (!productCounts[key]) {
+      productCounts[key] = {
+        productTitle: record.productTitle || 'Unknown Product',
+        variantTitle: record.variantTitle || 'Default Variant',
+        variantId: record.variantId,
+        count: 0
+      };
+    }
+    productCounts[key].count += 1;
+  });
+
+  const topProducts = Object.values(productCounts)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map(item => ({
+      productTitle: item.productTitle,
+      variantTitle: item.variantTitle,
+      variantId: item.variantId,
+      _count: { id: item.count }
+    }));
 
   // Trend Data
   const dateMap = {};
