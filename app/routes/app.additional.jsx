@@ -1,5 +1,5 @@
 import { json } from "@remix-run/node";
-import { useLoaderData, useSubmit } from "react-router";
+import { useLoaderData, useSubmit } from "react-router"; // Fixed import
 import React from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -52,7 +52,7 @@ export async function loader({ request }) {
     }),
     prisma.backInStock.findMany({
       where: whereClause,
-      take: 8,
+      take: 10,
       orderBy: { createdAt: 'desc' }
     })
   ]);
@@ -172,7 +172,7 @@ export default function Dashboard() {
           <Card title="Click Rate" value={`${stats.clickRate}%`} sub={`${stats.emailsClicked} unique clicks`} icon={MousePointer2} color="text-orange-600" />
         </div>
 
-        {/* Chart Area */}
+        {/* Chart & List Area */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm">
             <h3 className="text-lg font-black text-gray-900 mb-8">Performance Trends</h3>
@@ -192,7 +192,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Quick List */}
           <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
             <h3 className="text-lg font-black text-gray-900 mb-6 flex items-center justify-between">
               Recent Activity <ArrowUpRight size={18} className="text-gray-400" />
@@ -204,9 +203,9 @@ export default function Dashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] text-gray-400 font-medium truncate max-w-[150px]">{sub.productTitle}</span>
                     <div className="flex gap-1">
-                       <StatusDot active={sub.notified} color="bg-green-500" />
-                       <StatusDot active={sub.opened} color="bg-pink-500" />
-                       <StatusDot active={sub.clicked} color="bg-orange-500" />
+                       <StatusDot active={sub.notified} color="bg-green-500" title="Sent" />
+                       <StatusDot active={sub.opened} color="bg-pink-500" title="Opened" />
+                       <StatusDot active={sub.clicked} color="bg-orange-500" title="Clicked" />
                     </div>
                   </div>
                 </div>
@@ -219,6 +218,6 @@ export default function Dashboard() {
   );
 }
 
-function StatusDot({ active, color }) {
-  return <div className={`w-1.5 h-1.5 rounded-full ${active ? color : 'bg-gray-100'}`} />;
+function StatusDot({ active, color, title }) {
+  return <div title={title} className={`w-1.5 h-1.5 rounded-full ${active ? color : 'bg-gray-100'}`} />;
 }
