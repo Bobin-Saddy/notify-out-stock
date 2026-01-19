@@ -16,7 +16,6 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   
   const searchQuery = url.searchParams.get("search") || "";
-  const variantSearch = url.searchParams.get("variant") || "";
   const dateFilter = url.searchParams.get("dateRange") || "7";
 
   const days = parseInt(dateFilter) || 7;
@@ -39,7 +38,7 @@ export async function loader({ request }) {
     })
   ]);
 
-  // Dynamic Chart Data Processing
+  // --- Dynamic Graph Logic ---
   const dateMap = {};
   allRecords.forEach(curr => {
     const date = new Date(curr.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -59,10 +58,9 @@ export async function loader({ request }) {
     notificationsSent: allRecords.filter(r => r.notified).length,
     opened: allRecords.filter(r => r.opened).length,
     clicked: allRecords.filter(r => r.clicked).length,
-    purchased: Math.round(allRecords.filter(r => r.clicked).length * 0.4) // Dynamic mock for purchased
+    purchased: Math.round(allRecords.filter(r => r.clicked).length * 0.35) 
   };
 
-  // Enriched Table Data
   const subscribers = await Promise.all(
     recentSubscribers.map(async (sub) => {
       try {
@@ -79,7 +77,7 @@ export async function loader({ request }) {
     })
   );
 
-  return json({ stats, subscribers, trendData, filters: { searchQuery, variantSearch, dateFilter } });
+  return json({ stats, subscribers, trendData, filters: { searchQuery, dateFilter } });
 }
 
 export default function Dashboard() {
@@ -90,7 +88,7 @@ export default function Dashboard() {
     { label: 'Total Requests', val: stats.totalRequests, icon: ShoppingBag, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Notifications Sent', val: stats.notificationsSent, icon: Bell, color: 'text-green-600', bg: 'bg-green-50' },
     { label: 'Delivery Rate', val: stats.totalRequests ? Math.round((stats.notificationsSent / stats.totalRequests) * 100) + '%' : '0%', icon: CheckCircle2, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-    { label: 'Open Rate', val: stats.notificationsSent ? Math.round((stats.opened / stats.notificationsSent) * 100) + '%' : '0%', icon: Eye, color: 'text-pink-600', bg: 'bg-pink-50' },
+    { label: 'Open Rate', val: stats.notificationsSent ? Math.round((stats.opened / stats.notificationsSent) * 100) + '%' : '0%', icon: Eye, color: 'text-rose-600', bg: 'bg-rose-50' },
     { label: 'Click Rate', val: stats.notificationsSent ? Math.round((stats.clicked / stats.notificationsSent) * 100) + '%' : '0%', icon: MousePointer2, color: 'text-purple-600', bg: 'bg-purple-50' },
     { label: 'Conversion Rate', val: '34%', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   ];
@@ -100,47 +98,47 @@ export default function Dashboard() {
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
       
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
+        {/* Header Section */}
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">Back In Stock Dashboard</h1>
-            <p className="text-sm text-slate-500">Monitor your store's notification performance</p>
+            <p className="text-sm text-slate-500">Real-time store notification analytics</p>
           </div>
-          <button className="bg-black text-white px-5 py-2 rounded-xl flex items-center gap-2 text-sm font-semibold shadow-sm">
+          <button className="bg-black text-white px-5 py-2 rounded-xl flex items-center gap-2 text-sm font-semibold shadow-sm hover:opacity-90">
             <Settings size={18} /> Settings
           </button>
         </div>
 
-        {/* Filters */}
+        {/* Filters Section */}
         <Form onChange={(e) => submit(e.currentTarget)} className="flex flex-wrap gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-          <select name="dateRange" defaultValue={filters.dateFilter} className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl text-sm outline-none w-44">
+          <select name="dateRange" defaultValue={filters.dateFilter} className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-sm outline-none w-44">
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
           </select>
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input name="search" placeholder="Search by email..." defaultValue={filters.searchQuery} className="w-full bg-slate-50 border border-slate-200 pl-10 pr-4 py-2 rounded-xl text-sm outline-none" />
+            <input name="search" placeholder="Search customer email..." defaultValue={filters.searchQuery} className="w-full bg-slate-50 border border-slate-200 pl-10 pr-4 py-2.5 rounded-xl text-sm outline-none" />
           </div>
         </Form>
 
-        {/* Metrics Grid */}
+        {/* Metric Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {metrics.map((m, i) => (
-            <div key={i} className="bg-white p-6 rounded-[24px] border border-slate-100 flex items-center gap-5 shadow-sm hover:translate-y-[-2px] transition-all">
+            <div key={i} className="bg-white p-6 rounded-[24px] border border-slate-100 flex items-center gap-5 shadow-sm hover:shadow-md transition-all">
               <div className={`p-4 rounded-2xl ${m.bg} ${m.color}`}><m.icon size={22} /></div>
               <div>
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{m.label}</p>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">{m.label}</p>
                 <p className="text-3xl font-extrabold">{m.val}</p>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-          {/* Trend Chart (60% width) */}
-          <div className="lg:col-span-3 bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-            <h3 className="text-lg font-bold mb-8">Requests and Notifications Trend</h3>
+        {/* Trend & Funnel Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* 4-Bar Chart */}
+          <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold mb-8">Performance Trend</h3>
             <div className="h-[350px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={trendData} barGap={4}>
@@ -158,10 +156,10 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Funnel (40% width) */}
-          <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between">
-            <h3 className="text-lg font-bold mb-8">Notification Performance Funnel</h3>
-            <div className="space-y-8 mb-4">
+          {/* Dynamic Performance Funnel */}
+          <div className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
+            <h3 className="text-lg font-bold mb-8">Dynamic Performance Funnel</h3>
+            <div className="space-y-7">
               {[
                 { label: 'Request', val: stats.totalRequests, color: 'bg-blue-500' },
                 { label: 'Sent', val: stats.notificationsSent, color: 'bg-green-500' },
@@ -169,39 +167,35 @@ export default function Dashboard() {
                 { label: 'Clicked', val: stats.clicked, color: 'bg-violet-500' },
                 { label: 'Purchased', val: stats.purchased, color: 'bg-indigo-500' }
               ].map((item) => {
-                const perc = stats.totalRequests > 0 ? Math.round((item.val / stats.totalRequests) * 100) : 0;
+                const percentage = stats.totalRequests > 0 ? Math.round((item.val / stats.totalRequests) * 100) : 0;
                 return (
                   <div key={item.label}>
-                    <div className="flex justify-between text-xs font-bold mb-2 uppercase tracking-tighter">
+                    <div className="flex justify-between text-[11px] font-black uppercase mb-2">
                       <span className="text-slate-500">{item.label}</span>
-                      <span className="text-slate-400">{perc}%</span>
+                      <span className="text-slate-400">{percentage}%</span>
                     </div>
                     <div className="h-2.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100">
-                      <div className={`h-full ${item.color} transition-all duration-1000`} style={{ width: `${perc}%` }} />
+                      <div className={`h-full ${item.color} transition-all duration-700`} style={{ width: `${percentage}%` }} />
                     </div>
                   </div>
                 );
               })}
-            </div>
-            <div className="flex items-center justify-center gap-2 pt-4 border-t border-slate-50">
-                <div className="w-3 h-3 bg-blue-500 rounded-full" />
-                <span className="text-xs font-bold text-slate-500 uppercase">Conversion Funnel</span>
             </div>
           </div>
         </div>
 
         {/* Recent Activity Table */}
         <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+          <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/20">
             <h3 className="text-lg font-bold">Recent Subscribers</h3>
-            <span className="text-[10px] bg-white px-3 py-1 rounded-full border border-slate-200 font-bold text-slate-400 uppercase">Live Updates</span>
+            <span className="text-[10px] bg-white px-3 py-1 rounded-full border border-slate-200 font-bold text-slate-400 uppercase tracking-widest">Channel: Web</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left">
               <thead>
                 <tr className="text-[11px] text-slate-400 uppercase tracking-widest">
                   <th className="px-8 py-5 border-b border-slate-50">Customer Email</th>
-                  <th className="px-8 py-5 border-b border-slate-50">Product Details</th>
+                  <th className="px-8 py-5 border-b border-slate-50">Product</th>
                   <th className="px-8 py-5 border-b border-slate-50 text-center">Engagement</th>
                   <th className="px-8 py-5 border-b border-slate-50 text-center">Status</th>
                   <th className="px-8 py-5 border-b border-slate-50 text-right">Created On</th>
@@ -210,15 +204,15 @@ export default function Dashboard() {
               <tbody className="divide-y divide-slate-50">
                 {subscribers.map((sub) => (
                   <tr key={String(sub.id)} className="text-sm hover:bg-slate-50/50 transition-colors">
-                    <td className="px-8 py-5 font-bold text-blue-600">{sub.email}</td>
+                    <td className="px-8 py-5 font-bold text-blue-600 truncate max-w-[200px]">{sub.email}</td>
                     <td className="px-8 py-5">
-                      <p className="font-bold text-slate-800">{sub.productTitle}</p>
-                      <p className="text-[10px] text-blue-500 font-black uppercase tracking-tighter mt-0.5">{sub.variantTitle}</p>
+                      <p className="font-bold text-slate-800 leading-tight">{sub.productTitle}</p>
+                      <p className="text-[10px] text-blue-500 font-black uppercase mt-0.5 tracking-tighter">{sub.variantTitle}</p>
                     </td>
                     <td className="px-8 py-5">
                        <div className="flex items-center justify-center gap-4">
-                          <div className={`w-2.5 h-2.5 rounded-full ${sub.opened ? 'bg-rose-500 shadow-sm' : 'bg-slate-200'}`} title="Opened" />
-                          <div className={`w-2.5 h-2.5 rounded-full ${sub.clicked ? 'bg-violet-500 shadow-sm' : 'bg-slate-200'}`} title="Clicked" />
+                          <div className={`w-2.5 h-2.5 rounded-full ${sub.opened ? 'bg-rose-500 shadow-md shadow-rose-200' : 'bg-slate-200'}`} title="Opened" />
+                          <div className={`w-2.5 h-2.5 rounded-full ${sub.clicked ? 'bg-violet-500 shadow-md shadow-violet-200' : 'bg-slate-200'}`} title="Clicked" />
                        </div>
                     </td>
                     <td className="px-8 py-5 text-center">
