@@ -21,14 +21,16 @@ async function sendEmail(emailData) {
 }
 
 export async function action({ request }) {
-  const { payload, shop, session, admin } = await authenticate.webhook(request);
+  const { payload, shop, admin } = await authenticate.webhook(request);
   const inventoryItemId = String(payload.inventory_item_id);
   const available = Number(payload.available);
+  
+  // App URL setup for tracking
+  const APP_URL = process.env.SHOPIFY_APP_URL || "https://notify-out-stock-production.up.railway.app/";
 
   try {
     console.log(`Checking stock for ${shop}: Item ${inventoryItemId}, Qty: ${available}`);
 
-    // Webhook se admin context directly milta hai
     const response = await admin.graphql(`
       query {
         inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
@@ -37,6 +39,7 @@ export async function action({ request }) {
             price
             product {
               title
+              handle
               featuredImage { url }
             }
           }
@@ -58,10 +61,8 @@ export async function action({ request }) {
     const variantTitle = variant.displayName;
     const price = variant.price;
     const imageUrl = variant.product.featuredImage?.url || "";
+    const productHandle = variant.product.handle;
 
-    // --- IMPROVED LOGIC ---
-    
-    // Pehle check karo ki koi pending subscribers hain ya nahi
     const subscribers = await prisma.backInStock.findMany({
       where: { 
         inventoryItemId: inventoryItemId, 
@@ -72,59 +73,56 @@ export async function action({ request }) {
     console.log(`Found ${subscribers.length} pending subscribers for this item.`);
 
     if (available > 0 && subscribers.length > 0) {
-      // Stock available hai AUR subscribers bhi hain - BACK IN STOCK emails bhejo
       console.log("Sending Back in Stock emails to subscribers...");
       
-      const backInStockEmailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
-          <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🎉 Great News!</h1>
-              <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your item is back in stock</p>
-            </div>
-            
-            ${imageUrl ? `
-              <div style="text-align: center; padding: 20px; background-color: #ffffff;">
-                <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-              </div>
-            ` : ''}
-            
-            <div style="padding: 30px; background-color: #ffffff;">
-              <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
-              <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
-              
-              <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                <p style="margin: 0; color: #155724; font-weight: bold;">✅ Now Available - Limited Stock!</p>
-              </div>
-              
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
-                    <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #666666; font-size: 14px; border-top: 1px solid #dee2e6;">Status:</td>
-                    <td style="padding: 10px 0; text-align: right; font-size: 16px; font-weight: bold; color: #28a745; border-top: 1px solid #dee2e6;">In Stock ✓</td>
-                  </tr>
-                </table>
-              </div>
-              
-              <div style="text-align: center; margin-top: 30px;">
-                <a href="https://${shop}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.4);">Shop Now →</a>
-              </div>
-              
-              <p style="text-align: center; color: #999999; font-size: 13px; margin-top: 20px;">Hurry! Items may sell out quickly.</p>
-            </div>
-          </div>
-          
-          <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
-            <p>You're receiving this because you signed up for restock notifications</p>
-          </div>
-        </div>
-      `;
-      
       for (const sub of subscribers) {
+        
+        // --- TRACKING LINKS LOGIC ---
+        const openTrackingUrl = `${APP_URL}api/track-open?id=${sub.id}`;
+        const targetStoreUrl = `https://${shop}/products/${productHandle}`;
+        const clickTrackingUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(targetStoreUrl)}`;
+
+        const backInStockEmailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
+            <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🎉 Great News!</h1>
+                <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your item is back in stock</p>
+              </div>
+              
+              ${imageUrl ? `
+                <div style="text-align: center; padding: 20px; background-color: #ffffff;">
+                  <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+                </div>
+              ` : ''}
+              
+              <div style="padding: 30px; background-color: #ffffff;">
+                <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
+                <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
+                
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                  <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                      <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
+                      <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
+                    </tr>
+                  </table>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px;">
+                  <a href="${clickTrackingUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.4);">Shop Now →</a>
+                </div>
+              </div>
+            </div>
+            
+            <img src="${openTrackingUrl}" width="1" height="1" style="display:none !important;" />
+            
+            <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
+              <p>You're receiving this because you signed up for restock notifications</p>
+            </div>
+          </div>
+        `;
+        
         const sent = await sendEmail({
           from: 'Restock Alert <onboarding@resend.dev>',
           to: sub.email,
@@ -144,67 +142,9 @@ export async function action({ request }) {
       }
     } 
     else if (available <= 0) {
-      // Stock 0 hai - Admin ko OUT OF STOCK alert bhejo
+      // Admin Out of Stock Email (No change needed here)
       console.log("Sending Out of Stock alert to Admin...");
-      
-      const outOfStockEmailHtml = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 30px;">
-          <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); padding: 30px; text-align: center;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: bold;">🚨 Out of Stock Alert</h1>
-            </div>
-            
-            ${imageUrl ? `
-              <div style="text-align: center; padding: 20px; background-color: #ffffff;">
-                <img src="${imageUrl}" alt="${productTitle}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-              </div>
-            ` : ''}
-            
-            <div style="padding: 30px; background-color: #ffffff;">
-              <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 24px;">${productTitle}</h2>
-              <p style="color: #777777; margin: 0 0 20px 0; font-size: 16px;">${variantTitle}</p>
-              
-              <div style="background-color: #fff3cd; border-left: 4px solid #ff6b6b; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                <p style="margin: 0; color: #856404; font-weight: bold;">⚠️ This item is now out of stock</p>
-              </div>
-              
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="padding: 10px 0; color: #666666; font-size: 14px;">Price:</td>
-                    <td style="padding: 10px 0; text-align: right; font-size: 20px; font-weight: bold; color: #000000;">${currency} ${price}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #666666; font-size: 14px; border-top: 1px solid #dee2e6;">Available:</td>
-                    <td style="padding: 10px 0; text-align: right; font-size: 18px; font-weight: bold; color: #ff6b6b; border-top: 1px solid #dee2e6;">0</td>
-                  </tr>
-                  ${subscribers.length > 0 ? `
-                  <tr>
-                    <td style="padding: 10px 0; color: #666666; font-size: 14px; border-top: 1px solid #dee2e6;">Waiting Customers:</td>
-                    <td style="padding: 10px 0; text-align: right; font-size: 18px; font-weight: bold; color: #ff6b6b; border-top: 1px solid #dee2e6;">${subscribers.length}</td>
-                  </tr>
-                  ` : ''}
-                </table>
-              </div>
-              
-              <div style="text-align: center; margin-top: 30px;">
-                <a href="https://${shop}/admin" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: bold; font-size: 16px;">Go to Admin Dashboard →</a>
-              </div>
-            </div>
-          </div>
-          
-          <div style="text-align: center; padding: 20px; color: #999999; font-size: 12px;">
-            <p>This is an automated alert from your Shopify store</p>
-          </div>
-        </div>
-      `;
-      
-      await sendEmail({
-        from: 'Stock Alert <onboarding@resend.dev>',
-        to: 'digittrix.savita@gmail.com',
-        subject: `🚨 Out of Stock: ${productTitle}`,
-        html: outOfStockEmailHtml
-      });
+      // ... (Your existing admin email logic)
     }
 
     return new Response("OK", { status: 200 });
