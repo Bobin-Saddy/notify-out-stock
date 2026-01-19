@@ -26,8 +26,7 @@ export async function loader({ request }) {
     ...(searchQuery && {
       OR: [
         { email: { contains: searchQuery, mode: 'insensitive' } },
-        { variantId: { contains: searchQuery, mode: 'insensitive' } },
-        { productTitle: { contains: searchQuery, mode: 'insensitive' } }
+        { variantId: { contains: searchQuery, mode: 'insensitive' } }
       ]
     }),
     ...(dateFilter !== "all" && { createdAt: { gte: dateFilterStart } }),
@@ -44,7 +43,7 @@ export async function loader({ request }) {
     emailsClicked,
     allRecords,
     recentSubscribers,
-    allProductRecords
+    allVariantRecords
   ] = await Promise.all([
     prisma.backInStock.count({ where: whereClause }),
     prisma.backInStock.count({ where: { ...whereClause, notified: true } }),
@@ -62,34 +61,101 @@ export async function loader({ request }) {
     }),
     prisma.backInStock.findMany({
       where: whereClause,
-      select: { productTitle: true, variantTitle: true, variantId: true }
+      select: { variantId: true }
     })
   ]);
 
-  // Process top products manually
-  const productCounts = {};
-  allProductRecords.forEach(record => {
-    const key = `${record.productTitle || 'Unknown'}|${record.variantTitle || 'Default'}|${record.variantId || ''}`;
-    if (!productCounts[key]) {
-      productCounts[key] = {
-        productTitle: record.productTitle || 'Unknown Product',
-        variantTitle: record.variantTitle || 'Default Variant',
-        variantId: record.variantId,
-        count: 0
-      };
+  // Process top variants manually
+  const variantCounts = {};
+  allVariantRecords.forEach(record => {
+    const variantId = record.variantId;
+    if (!variantCounts[variantId]) {
+      variantCounts[variantId] = 0;
     }
-    productCounts[key].count += 1;
+    variantCounts[variantId] += 1;
   });
 
-  const topProducts = Object.values(productCounts)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-    .map(item => ({
-      productTitle: item.productTitle,
-      variantTitle: item.variantTitle,
-      variantId: item.variantId,
-      _count: { id: item.count }
-    }));
+  const topVariantIds = Object.entries(variantCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  // Fetch product details from Shopify for top variants
+  const topProducts = [];
+  for (const [variantId, count] of topVariantIds) {
+    try {
+      const response = await admin.graphql(`
+        query getVariant($id: ID!) {
+          productVariant(id: $id) {
+            id
+            title
+            displayName
+            product {
+              title
+            }
+          }
+        }
+      `, {
+        variables: { id: `gid://shopify/ProductVariant/${variantId}` }
+      });
+      
+      const data = await response.json();
+      const variant = data?.data?.productVariant;
+      
+      topProducts.push({
+        variantId,
+        productTitle: variant?.product?.title || 'Unknown Product',
+        variantTitle: variant?.displayName || variant?.title || 'Default Variant',
+        count
+      });
+    } catch (error) {
+      topProducts.push({
+        variantId,
+        productTitle: 'Unknown Product',
+        variantTitle: 'Unknown Variant',
+        count
+      });
+    }
+  }
+
+  // Fetch product details for recent subscribers
+  const enrichedSubscribers = await Promise.all(
+    recentSubscribers.map(async (sub) => {
+      try {
+        const response = await admin.graphql(`
+          query getVariant($id: ID!) {
+            productVariant(id: $id) {
+              id
+              title
+              displayName
+              sku
+              product {
+                title
+              }
+            }
+          }
+        `, {
+          variables: { id: `gid://shopify/ProductVariant/${sub.variantId}` }
+        });
+        
+        const data = await response.json();
+        const variant = data?.data?.productVariant;
+        
+        return {
+          ...sub,
+          productTitle: variant?.product?.title || 'Unknown Product',
+          variantTitle: variant?.displayName || variant?.title || 'Default Variant',
+          sku: variant?.sku || 'N/A'
+        };
+      } catch (error) {
+        return {
+          ...sub,
+          productTitle: 'Unknown Product',
+          variantTitle: 'Unknown Variant',
+          sku: 'N/A'
+        };
+      }
+    })
+  );
 
   // Trend Data
   const dateMap = {};
@@ -116,7 +182,7 @@ export async function loader({ request }) {
       conversionRate,
       openRate
     },
-    recentSubscribers,
+    recentSubscribers: enrichedSubscribers,
     trendData: Object.values(dateMap),
     topProducts,
     filters: { search: searchQuery, dateRange: dateFilter, status: statusFilter }
@@ -197,7 +263,7 @@ export default function Dashboard() {
                     name="search"
                     value={searchValue}
                     onChange={(e) => setSearchValue(e.target.value)}
-                    placeholder="Email, product, or variant..."
+                    placeholder="Email or variant ID..."
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -255,7 +321,7 @@ export default function Dashboard() {
           <MetricCard 
             title="Notifications Sent" 
             value={stats.notificationsSent.toLocaleString()} 
-            subtitle={`${((stats.notificationsSent/stats.totalRequests)*100).toFixed(0)}% of requests`}
+            subtitle={stats.totalRequests > 0 ? `${((stats.notificationsSent/stats.totalRequests)*100).toFixed(0)}% of requests` : '0% of requests'}
             icon={Bell} 
             gradient="bg-gradient-to-br from-green-500 to-green-600"
             trend="+8%"
@@ -314,26 +380,28 @@ export default function Dashboard() {
           <div className="bg-white p-8 rounded-2xl shadow-lg">
             <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-6">Top Requested Products</h3>
             <div className="space-y-4">
-              {topProducts.map((product, idx) => (
+              {topProducts.length > 0 ? topProducts.map((product, idx) => (
                 <div key={idx} className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
                   <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
                     <span className="text-white font-black text-sm">#{idx + 1}</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-gray-900 truncate">{product.productTitle || 'Unknown Product'}</p>
-                    <p className="text-xs text-gray-500 truncate">{product.variantTitle || 'Default'}</p>
+                    <p className="text-xs font-bold text-gray-900 truncate">{product.productTitle}</p>
+                    <p className="text-xs text-gray-500 truncate">{product.variantTitle}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-gradient-to-r from-blue-500 to-purple-500" 
-                          style={{width: `${(product._count.id / topProducts[0]._count.id) * 100}%`}}
+                          style={{width: `${(product.count / topProducts[0].count) * 100}%`}}
                         ></div>
                       </div>
-                      <span className="text-xs font-black text-gray-600">{product._count.id}</span>
+                      <span className="text-xs font-black text-gray-600">{product.count}</span>
                     </div>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-center text-gray-400 text-sm py-8">No data available</p>
+              )}
             </div>
           </div>
         </div>
@@ -373,15 +441,15 @@ export default function Dashboard() {
                         </div>
                         <div>
                           <p className="text-sm font-bold text-gray-900">{sub.email}</p>
-                          <p className="text-xs text-gray-500">ID: {sub.id.slice(0, 8)}</p>
+                          <p className="text-xs text-gray-500">ID: {sub.id}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-5">
                       <div className="max-w-xs">
-                        <p className="text-sm font-bold text-gray-900 truncate">{sub.productTitle || 'Product Name'}</p>
-                        <p className="text-xs text-gray-500 truncate">{sub.variantTitle || 'Default Variant'}</p>
-                        <p className="text-xs text-blue-600 font-medium mt-1">SKU: {sub.variantId?.slice(-8) || 'N/A'}</p>
+                        <p className="text-sm font-bold text-gray-900 truncate">{sub.productTitle}</p>
+                        <p className="text-xs text-gray-500 truncate">{sub.variantTitle}</p>
+                        <p className="text-xs text-blue-600 font-medium mt-1">SKU: {sub.sku}</p>
                       </div>
                     </td>
                     <td className="px-6 py-5 text-center">
