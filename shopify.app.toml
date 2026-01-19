@@ -41,6 +41,10 @@ uri = "/webhooks/inventory-update"
 topics = [ "products/update" ]
 uri = "/webhooks/products-update"
 
+[[webhooks.subscriptions]]
+topics = [ "orders/create" ]
+uri = "/webhooks/orders-create"
+
 
 # ================================
 # 🔐 API PERMISSIONS
