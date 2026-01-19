@@ -30,11 +30,13 @@ export async function loader({ request }) {
       ]
     }),
     ...(dateFilter !== "all" && { createdAt: { gte: dateFilterStart } }),
-    ...(statusFilter === "notified" && { notified: true }),
-    ...(statusFilter === "pending" && { notified: false }),
-    ...(statusFilter === "opened" && { opened: true }),
-    ...(statusFilter === "clicked" && { clicked: true })
   };
+
+  // Status Filter Logic
+  if (statusFilter === "notified") whereClause.notified = true;
+  if (statusFilter === "pending") whereClause.notified = false;
+  if (statusFilter === "opened") whereClause.opened = true;
+  if (statusFilter === "clicked") whereClause.clicked = true;
 
   const [
     totalRequests, 
@@ -42,15 +44,14 @@ export async function loader({ request }) {
     emailsOpened,
     emailsClicked,
     allRecords,
-    recentSubscribers,
-    allVariantRecords
+    recentSubscribers
   ] = await Promise.all([
-    prisma.backInStock.count({ where: whereClause }),
-    prisma.backInStock.count({ where: { ...whereClause, notified: true } }),
-    prisma.backInStock.count({ where: { ...whereClause, opened: true } }),
-    prisma.backInStock.count({ where: { ...whereClause, clicked: true } }),
+    prisma.backInStock.count({ where: { shop, createdAt: { gte: dateFilter !== "all" ? dateFilterStart : new Date(0) } } }),
+    prisma.backInStock.count({ where: { shop, notified: true, createdAt: { gte: dateFilter !== "all" ? dateFilterStart : new Date(0) } } }),
+    prisma.backInStock.count({ where: { shop, opened: true, createdAt: { gte: dateFilter !== "all" ? dateFilterStart : new Date(0) } } }),
+    prisma.backInStock.count({ where: { shop, clicked: true, createdAt: { gte: dateFilter !== "all" ? dateFilterStart : new Date(0) } } }),
     prisma.backInStock.findMany({
-      where: whereClause,
+      where: { shop, createdAt: { gte: dateFilter !== "all" ? dateFilterStart : new Date(0) } },
       orderBy: { createdAt: 'desc' },
       select: { createdAt: true, notified: true, opened: true, clicked: true }
     }),
@@ -58,46 +59,10 @@ export async function loader({ request }) {
       where: whereClause, 
       take: 20, 
       orderBy: { createdAt: 'desc' } 
-    }),
-    prisma.backInStock.findMany({
-      where: whereClause,
-      select: { variantId: true }
     })
   ]);
 
-  const variantCounts = {};
-  allVariantRecords.forEach(record => {
-    const variantId = record.variantId;
-    variantCounts[variantId] = (variantCounts[variantId] || 0) + 1;
-  });
-
-  const topVariantIds = Object.entries(variantCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-  const topProducts = [];
-  for (const [variantId, count] of topVariantIds) {
-    try {
-      const response = await admin.graphql(`
-        query getVariant($id: ID!) {
-          productVariant(id: $id) {
-            id
-            displayName
-            product { title }
-          }
-        }
-      `, { variables: { id: `gid://shopify/ProductVariant/${variantId}` } });
-      const data = await response.json();
-      const variant = data?.data?.productVariant;
-      topProducts.push({
-        variantId,
-        productTitle: variant?.product?.title || 'Unknown Product',
-        variantTitle: variant?.displayName || 'Default Variant',
-        count
-      });
-    } catch (e) {
-      topProducts.push({ variantId, productTitle: 'Unknown Product', variantTitle: 'Unknown Variant', count });
-    }
-  }
-
+  // Shopify details fetch for table
   const enrichedSubscribers = await Promise.all(
     recentSubscribers.map(async (sub) => {
       try {
@@ -105,7 +70,6 @@ export async function loader({ request }) {
           query getVariant($id: ID!) {
             productVariant(id: $id) {
               displayName
-              sku
               product { title }
             }
           }
@@ -114,16 +78,16 @@ export async function loader({ request }) {
         const variant = data?.data?.productVariant;
         return {
           ...sub,
-          productTitle: variant?.product?.title || 'Unknown Product',
-          variantTitle: variant?.displayName || 'Default Variant',
-          sku: variant?.sku || 'N/A'
+          productTitle: variant?.product?.title || 'Product Not Found',
+          variantTitle: variant?.displayName || ''
         };
       } catch (e) {
-        return { ...sub, productTitle: 'Unknown Product', variantTitle: 'Unknown Variant', sku: 'N/A' };
+        return { ...sub, productTitle: 'Unknown Product', variantTitle: '' };
       }
     })
   );
 
+  // Graph Data Processing
   const dateMap = {};
   allRecords.forEach(item => {
     const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -136,148 +100,107 @@ export async function loader({ request }) {
     if (item.clicked) dateMap[date].Clicks += 1;
   });
 
-  const conversionRate = notificationsSent > 0 ? ((emailsClicked / notificationsSent) * 100).toFixed(1) : 0;
-  const openRate = notificationsSent > 0 ? ((emailsOpened / notificationsSent) * 100).toFixed(1) : 0;
-
   return json({
-    stats: { totalRequests, notificationsSent, emailsOpened, emailsClicked, conversionRate, openRate },
+    stats: { 
+      totalRequests, 
+      notificationsSent, 
+      emailsOpened, 
+      emailsClicked,
+      openRate: notificationsSent > 0 ? ((emailsOpened / notificationsSent) * 100).toFixed(1) : 0,
+      ctr: notificationsSent > 0 ? ((emailsClicked / notificationsSent) * 100).toFixed(1) : 0
+    },
     recentSubscribers: enrichedSubscribers,
-    trendData: Object.values(dateMap),
-    topProducts,
+    trendData: Object.values(dateMap).reverse().slice(0, 7),
     filters: { search: searchQuery, dateRange: dateFilter, status: statusFilter }
   });
 }
 
 export default function Dashboard() {
-  const { stats, recentSubscribers, trendData, topProducts, filters } = useLoaderData();
+  const { stats, recentSubscribers, trendData, filters } = useLoaderData();
   const submit = useSubmit();
   const [searchValue, setSearchValue] = useState(filters.search);
-  const [showFilters, setShowFilters] = useState(false);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    submit(formData, { method: "get" });
-  };
-
-  const MetricCard = ({ title, value, subtitle, icon: Icon, gradient, trend }) => (
-    <div className="relative bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
-      <div className={`absolute inset-0 ${gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
-      <div className="relative z-10">
-        <div className="flex items-start justify-between mb-4">
-          <div className={`p-3 rounded-xl ${gradient} bg-opacity-10 text-white`}>
-            <Icon size={24} />
-          </div>
-          {trend && (
-            <div className="flex items-center gap-1 px-2 py-1 bg-green-50 rounded-lg">
-              <TrendingUp size={12} className="text-green-600" />
-              <span className="text-xs font-bold text-green-600">{trend}</span>
-            </div>
-          )}
+  const MetricCard = ({ title, value, icon: Icon, gradient }) => (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden group">
+      <div className={`absolute right-0 top-0 w-24 h-24 ${gradient} opacity-5 -mr-8 -mt-8 rounded-full transition-transform group-hover:scale-110`}></div>
+      <div className="flex items-center gap-4">
+        <div className={`p-3 rounded-xl ${gradient} text-white shadow-lg`}>
+          <Icon size={20} />
         </div>
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">{title}</p>
-        <p className="text-3xl font-black text-gray-900 mb-1">{value}</p>
-        {subtitle && <p className="text-xs text-gray-400 font-medium">{subtitle}</p>}
+        <div>
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">{title}</p>
+          <p className="text-2xl font-black text-gray-900">{value}</p>
+        </div>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 p-6 md:p-10">
+    <div className="min-h-screen bg-gray-50 p-6 md:p-10 font-sans">
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
       
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header Section (Same as your code) */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-black text-gray-900 tracking-tight mb-2">Back In Stock Analytics</h1>
-            <p className="text-sm text-gray-500">Monitor your product restock notifications</p>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => setShowFilters(!showFilters)} className="flex items-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all">
-              <Filter size={16} /> Filters
-            </button>
-            <button className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all">
-              <Download size={16} /> Export
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Bar (Same as your code) */}
-        {showFilters && (
-          <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 mb-6">
-            <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Search</label>
-                <div className="relative">
-                  <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                  <input type="text" name="search" value={searchValue} onChange={(e) => setSearchValue(e.target.value)} placeholder="Email or variant ID..." className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Date Range</label>
-                <select name="dateRange" defaultValue={filters.dateRange} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-black text-gray-900">Analytics Overview</h1>
+          <div className="flex gap-2">
+             <form onChange={(e) => submit(e.currentTarget)} className="flex gap-2">
+                <select name="dateRange" defaultValue={filters.dateRange} className="bg-white border border-gray-200 px-4 py-2 rounded-xl text-sm font-bold shadow-sm">
                   <option value="7">Last 7 Days</option>
                   <option value="30">Last 30 Days</option>
                   <option value="all">All Time</option>
                 </select>
-              </div>
-              <div className="flex items-end">
-                <button type="submit" className="w-full bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold">Apply</button>
-              </div>
-            </form>
+             </form>
           </div>
-        )}
-
-        {/* Metric Cards (Same as your code) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard title="Total Requests" value={stats.totalRequests.toLocaleString()} icon={ShoppingBag} gradient="bg-gradient-to-br from-blue-500 to-blue-600" trend="+12%" />
-          <MetricCard title="Sent" value={stats.notificationsSent.toLocaleString()} icon={Bell} gradient="bg-gradient-to-br from-green-500 to-green-600" trend="+8%" />
-          <MetricCard title="Open Rate" value={`${stats.openRate}%`} icon={Eye} gradient="bg-gradient-to-br from-pink-500 to-pink-600" />
-          <MetricCard title="CTR" value={`${stats.conversionRate}%`} icon={MousePointer2} gradient="bg-gradient-to-br from-purple-500 to-purple-600" />
         </div>
 
-        {/* UPDATED CHART SECTION (Graphs implementation) */}
+        {/* 4 Main Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <MetricCard title="Requests" value={stats.totalRequests} icon={ShoppingBag} gradient="bg-blue-600" />
+          <MetricCard title="Sent" value={stats.notificationsSent} icon={Bell} gradient="bg-green-600" />
+          <MetricCard title="Open Rate" value={`${stats.openRate}%`} icon={Eye} gradient="bg-pink-600" />
+          <MetricCard title="CTR" value={`${stats.ctr}%`} icon={MousePointer2} gradient="bg-purple-600" />
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Requests and Notifications Trend (4 Bar Chart) */}
-          <div className="lg:col-span-2 bg-white p-8 rounded-2xl shadow-lg border border-gray-50">
-            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-6">Requests and Notifications Trend</h3>
-            <div className="h-72">
+          {/* Trend Chart with 4 Bars */}
+          <div className="lg:col-span-2 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Requests and Notifications Trend</h3>
+            <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#94A3B8'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#94A3B8'}} />
-                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
-                  <Legend iconType="circle" wrapperStyle={{paddingTop: '20px', fontSize: '12px', fontWeight: 'bold'}} />
-                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar name="Sent" dataKey="Sent" fill="#10b981" radius={[4, 4, 0, 0]} />
-                  <Bar name="Opens" dataKey="Opens" fill="#ec4899" radius={[4, 4, 0, 0]} />
-                  <Bar name="Clicks" dataKey="Clicks" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                <BarChart data={trendData} barGap={8}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700, fill: '#94A3B8'}} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700, fill: '#94A3B8'}} />
+                  <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                  <Legend iconType="circle" wrapperStyle={{paddingTop: '30px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase'}} />
+                  <Bar name="Requests" dataKey="Requests" fill="#2563EB" radius={[4, 4, 0, 0]} />
+                  <Bar name="Sent" dataKey="Sent" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  <Bar name="Opens" dataKey="Opens" fill="#EC4899" radius={[4, 4, 0, 0]} />
+                  <Bar name="Clicks" dataKey="Clicks" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Notification Performance Funnel */}
-          <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-50">
-            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-8">Notification Performance Funnel</h3>
-            <div className="space-y-7">
+          {/* Performance Funnel */}
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Notification Performance Funnel</h3>
+            <div className="space-y-8">
               {[
-                { label: 'Requests', val: stats.totalRequests, color: 'bg-blue-500' },
-                { label: 'Sent', val: stats.notificationsSent, color: 'bg-green-500' },
-                { label: 'Opened', val: stats.emailsOpened, color: 'bg-pink-500' },
-                { label: 'Clicked', val: stats.emailsClicked, color: 'bg-purple-500' }
+                { label: 'Total Requests', val: stats.totalRequests, color: 'bg-blue-600' },
+                { label: 'Successfully Sent', val: stats.notificationsSent, color: 'bg-green-600' },
+                { label: 'Total Opens', val: stats.emailsOpened, color: 'bg-pink-600' },
+                { label: 'Total Clicks', val: stats.emailsClicked, color: 'bg-purple-600' }
               ].map((item, idx) => {
-                const percentage = stats.totalRequests > 0 ? (item.val / stats.totalRequests) * 100 : 0;
+                const perc = stats.totalRequests > 0 ? (item.val / stats.totalRequests) * 100 : 0;
                 return (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex justify-between items-center text-xs font-bold uppercase tracking-tighter">
-                      <span className="text-gray-500">{item.label}</span>
-                      <span className="text-gray-900">{item.val.toLocaleString()} ({percentage.toFixed(0)}%)</span>
+                  <div key={idx} className="relative">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">{item.label}</span>
+                      <span className="text-xs font-bold text-gray-900">{item.val}</span>
                     </div>
-                    <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden">
-                      <div className={`h-full ${item.color} rounded-full transition-all duration-1000`} style={{ width: `${Math.max(percentage, 2)}%` }}></div>
+                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                      <div className={`h-full ${item.color} rounded-full`} style={{ width: `${perc}%` }}></div>
                     </div>
                   </div>
                 );
@@ -286,47 +209,46 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Subscribers Table (Same structure as your code) */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
-          <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="text-sm font-black uppercase tracking-wider text-gray-800">Recent Requests</h3>
+        {/* Table Section */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-8 py-6 border-b border-gray-100 bg-gray-50/50">
+            <h3 className="text-sm font-black text-gray-800 uppercase">Recent Requests</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gradient-to-r from-gray-50 to-blue-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Customer</th>
-                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Product</th>
-                  <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-wider">Engagement</th>
-                  <th className="px-6 py-4 text-right text-xs font-black text-gray-600 uppercase tracking-wider">Date</th>
+              <thead>
+                <tr className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-white">
+                  <th className="px-8 py-4 text-left">Customer</th>
+                  <th className="px-8 py-4 text-left">Product</th>
+                  <th className="px-8 py-4 text-center">Status</th>
+                  <th className="px-8 py-4 text-center">Engagement</th>
+                  <th className="px-8 py-4 text-right">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {recentSubscribers.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-blue-50 transition-colors group">
-                    <td className="px-6 py-5 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
-                        {sub.email.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="text-sm font-bold text-gray-900">{sub.email}</span>
+                  <tr key={sub.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-8 py-5 text-sm font-bold text-gray-900">{sub.email}</td>
+                    <td className="px-8 py-5">
+                      <p className="text-sm font-bold text-gray-800">{sub.productTitle}</p>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase">{sub.variantTitle}</p>
                     </td>
-                    <td className="px-6 py-5">
-                      <p className="text-sm font-bold text-gray-900 truncate max-w-[200px]">{sub.productTitle}</p>
-                      <p className="text-xs text-gray-500">{sub.variantTitle}</p>
-                    </td>
-                    <td className="px-6 py-5 text-center">
-                      <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${sub.notified ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {sub.notified ? 'Notified' : 'Pending'}
+                    <td className="px-8 py-5 text-center">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${sub.notified ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                        {sub.notified ? 'Sent' : 'In Queue'}
                       </span>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="px-8 py-5">
                       <div className="flex items-center justify-center gap-2">
-                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${sub.opened ? 'bg-pink-100 text-pink-600' : 'bg-gray-100 text-gray-400'}`}>Opened</span>
-                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${sub.clicked ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>Clicked</span>
+                        <div className={`w-2 h-2 rounded-full ${sub.opened ? 'bg-pink-500' : 'bg-gray-200'}`} title="Opened"></div>
+                        <div className={`w-2 h-2 rounded-full ${sub.clicked ? 'bg-purple-500' : 'bg-gray-200'}`} title="Clicked"></div>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase">
+                          {sub.opened ? 'Opened' : ''} {sub.clicked ? '& Clicked' : ''}
+                          {!sub.opened && !sub.clicked ? 'No Activity' : ''}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-6 py-5 text-right font-bold text-sm text-gray-900">
+                    <td className="px-8 py-5 text-right text-xs font-bold text-gray-500">
                       {new Date(sub.createdAt).toLocaleDateString()}
                     </td>
                   </tr>
