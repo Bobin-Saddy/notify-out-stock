@@ -342,10 +342,10 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Charts Row - 2 Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Trend Chart */}
-          <div className="lg:col-span-2 bg-white p-8 rounded-2xl shadow-lg">
+          <div className="bg-white p-8 rounded-2xl shadow-lg">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Activity Trends</h3>
               <div className="flex gap-2">
