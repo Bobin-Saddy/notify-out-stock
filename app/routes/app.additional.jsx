@@ -1,11 +1,11 @@
 import { json } from "@remix-run/node";
 import { useLoaderData, useSubmit } from "react-router";
-import React from 'react';
+import React, { useState } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line
 } from 'recharts';
 import { 
-  FileText, Bell, Truck, Eye, MousePointer2, TrendingUp, Search, Settings
+  FileText, Bell, Truck, Eye, MousePointer2, TrendingUp, Search, Settings, Package, Mail, Calendar, Filter, Download, ChevronDown, ExternalLink, ShoppingBag
 } from 'lucide-react';
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
@@ -16,6 +16,7 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const searchQuery = url.searchParams.get("search") || "";
   const dateFilter = url.searchParams.get("dateRange") || "7";
+  const statusFilter = url.searchParams.get("status") || "all";
 
   const now = new Date();
   const dateFilterStart = new Date(now.getTime() - parseInt(dateFilter) * 24 * 60 * 60 * 1000);
@@ -25,20 +26,25 @@ export async function loader({ request }) {
     ...(searchQuery && {
       OR: [
         { email: { contains: searchQuery, mode: 'insensitive' } },
-        { variantId: { contains: searchQuery, mode: 'insensitive' } }
+        { variantId: { contains: searchQuery, mode: 'insensitive' } },
+        { productTitle: { contains: searchQuery, mode: 'insensitive' } }
       ]
     }),
-    ...(dateFilter !== "all" && { createdAt: { gte: dateFilterStart } })
+    ...(dateFilter !== "all" && { createdAt: { gte: dateFilterStart } }),
+    ...(statusFilter === "notified" && { notified: true }),
+    ...(statusFilter === "pending" && { notified: false }),
+    ...(statusFilter === "opened" && { opened: true }),
+    ...(statusFilter === "clicked" && { clicked: true })
   };
 
-  // 1. Fetching ACTUAL COUNTS from DB
   const [
     totalRequests, 
     notificationsSent,
     emailsOpened,
     emailsClicked,
     allRecords,
-    recentSubscribers
+    recentSubscribers,
+    topProducts
   ] = await Promise.all([
     prisma.backInStock.count({ where: whereClause }),
     prisma.backInStock.count({ where: { ...whereClause, notified: true } }),
@@ -51,12 +57,19 @@ export async function loader({ request }) {
     }),
     prisma.backInStock.findMany({ 
       where: whereClause, 
-      take: 10, 
+      take: 20, 
       orderBy: { createdAt: 'desc' } 
+    }),
+    prisma.backInStock.groupBy({
+      by: ['productTitle', 'variantTitle'],
+      where: whereClause,
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 5
     })
   ]);
 
-  // 2. Trend Data with Actual Daily Counts
+  // Trend Data
   const dateMap = {};
   allRecords.forEach(item => {
     const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -69,137 +82,323 @@ export async function loader({ request }) {
     if (item.clicked) dateMap[date].Clicks += 1;
   });
 
+  const conversionRate = notificationsSent > 0 ? ((emailsClicked / notificationsSent) * 100).toFixed(1) : 0;
+  const openRate = notificationsSent > 0 ? ((emailsOpened / notificationsSent) * 100).toFixed(1) : 0;
+
   return json({
     stats: { 
       totalRequests, 
       notificationsSent, 
       emailsOpened, 
-      emailsClicked 
+      emailsClicked,
+      conversionRate,
+      openRate
     },
     recentSubscribers,
     trendData: Object.values(dateMap),
-    filters: { search: searchQuery, dateRange: dateFilter }
+    topProducts,
+    filters: { search: searchQuery, dateRange: dateFilter, status: statusFilter }
   });
 }
 
 export default function Dashboard() {
-  const { stats, recentSubscribers, trendData, filters } = useLoaderData();
+  const { stats, recentSubscribers, trendData, topProducts, filters } = useLoaderData();
   const submit = useSubmit();
+  const [searchValue, setSearchValue] = useState(filters.search);
+  const [showFilters, setShowFilters] = useState(false);
 
-  const MetricCard = ({ title, value, icon: Icon, color, iconColor }) => (
-    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-      <div className={`p-3 rounded-2xl ${color} bg-opacity-10`}>
-        <Icon size={24} className={iconColor} />
-      </div>
-      <div>
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{title}</p>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
+  const handleSearch = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    submit(formData, { method: "get" });
+  };
+
+  const MetricCard = ({ title, value, subtitle, icon: Icon, gradient, trend }) => (
+    <div className="relative bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
+      <div className={`absolute inset-0 ${gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
+      <div className="relative z-10">
+        <div className="flex items-start justify-between mb-4">
+          <div className={`p-3 rounded-xl ${gradient} bg-opacity-10`}>
+            <Icon size={24} className="text-white" style={{filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.5))'}} />
+          </div>
+          {trend && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-green-50 rounded-lg">
+              <TrendingUp size={12} className="text-green-600" />
+              <span className="text-xs font-bold text-green-600">{trend}</span>
+            </div>
+          )}
+        </div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">{title}</p>
+        <p className="text-3xl font-black text-gray-900 mb-1">{value}</p>
+        {subtitle && <p className="text-xs text-gray-400 font-medium">{subtitle}</p>}
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] p-6 md:p-10 font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 p-6 md:p-10">
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
       
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-extrabold tracking-tight">Back In Stock Dashboard</h1>
-          <button className="bg-black text-white px-6 py-2 rounded-full text-xs font-bold uppercase shadow-sm">Settings</button>
+        {/* Header with Search */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-black text-gray-900 tracking-tight mb-2">Back In Stock Analytics</h1>
+            <p className="text-sm text-gray-500">Monitor your product restock notifications</p>
+          </div>
+          
+          <div className="flex gap-3">
+            <button 
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
+            >
+              <Filter size={16} />
+              Filters
+            </button>
+            <button className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all">
+              <Download size={16} />
+              Export
+            </button>
+          </div>
         </div>
 
-        {/* Stats Grid - Now Showing Actual Numbers */}
+        {/* Search & Filter Bar */}
+        {showFilters && (
+          <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+            <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Search</label>
+                <div className="relative">
+                  <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input 
+                    type="text" 
+                    name="search"
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                    placeholder="Email, product, or variant..."
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Date Range</label>
+                <select 
+                  name="dateRange" 
+                  defaultValue={filters.dateRange}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="1">Last 24 Hours</option>
+                  <option value="7">Last 7 Days</option>
+                  <option value="30">Last 30 Days</option>
+                  <option value="90">Last 90 Days</option>
+                  <option value="all">All Time</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 uppercase mb-2">Status</label>
+                <select 
+                  name="status" 
+                  defaultValue={filters.status}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">All Requests</option>
+                  <option value="pending">Pending</option>
+                  <option value="notified">Notified</option>
+                  <option value="opened">Opened</option>
+                  <option value="clicked">Clicked</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-4 flex justify-end">
+                <button type="submit" className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all">
+                  Apply Filters
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard title="Total Requests" value={stats.totalRequests} icon={FileText} color="bg-blue-100" iconColor="text-blue-600" />
-          <MetricCard title="Notifications Sent" value={stats.notificationsSent} icon={Bell} color="bg-green-100" iconColor="text-green-600" />
-          <MetricCard title="Emails Opened" value={stats.emailsOpened} icon={Eye} color="bg-pink-100" iconColor="text-pink-600" />
-          <MetricCard title="Link Clicks" value={stats.emailsClicked} icon={MousePointer2} color="bg-purple-100" iconColor="text-purple-600" />
+          <MetricCard 
+            title="Total Requests" 
+            value={stats.totalRequests.toLocaleString()} 
+            subtitle="All time requests"
+            icon={ShoppingBag} 
+            gradient="bg-gradient-to-br from-blue-500 to-blue-600"
+            trend="+12%"
+          />
+          <MetricCard 
+            title="Notifications Sent" 
+            value={stats.notificationsSent.toLocaleString()} 
+            subtitle={`${((stats.notificationsSent/stats.totalRequests)*100).toFixed(0)}% of requests`}
+            icon={Bell} 
+            gradient="bg-gradient-to-br from-green-500 to-green-600"
+            trend="+8%"
+          />
+          <MetricCard 
+            title="Email Open Rate" 
+            value={`${stats.openRate}%`} 
+            subtitle={`${stats.emailsOpened} opened`}
+            icon={Eye} 
+            gradient="bg-gradient-to-br from-pink-500 to-pink-600"
+          />
+          <MetricCard 
+            title="Click Through Rate" 
+            value={`${stats.conversionRate}%`} 
+            subtitle={`${stats.emailsClicked} clicks`}
+            icon={MousePointer2} 
+            gradient="bg-gradient-to-br from-purple-500 to-purple-600"
+          />
         </div>
 
-        {/* Middle Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-          {/* Chart with Real Numbers */}
-          <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="text-sm font-bold text-gray-800 mb-6 uppercase tracking-wider">Requests vs Interactions</h3>
-            <div className="h-64">
+        {/* Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Trend Chart */}
+          <div className="lg:col-span-2 bg-white p-8 rounded-2xl shadow-lg">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider">Activity Trends</h3>
+              <div className="flex gap-2">
+                <button className="px-3 py-1 text-xs font-bold bg-blue-50 text-blue-600 rounded-lg">Daily</button>
+                <button className="px-3 py-1 text-xs font-bold text-gray-400 rounded-lg hover:bg-gray-50">Weekly</button>
+              </div>
+            </div>
+            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trendData}>
+                <LineChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                  <Tooltip cursor={{fill: '#f9f9f9'}} />
-                  <Legend iconType="circle" />
-                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={10} />
-                  <Bar name="Opens" dataKey="Opens" fill="#ec4899" radius={[4, 4, 0, 0]} barSize={10} />
-                  <Bar name="Clicks" dataKey="Clicks" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={10} />
-                </BarChart>
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#9CA3AF'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#9CA3AF'}} />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: 'none',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                    }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{fontSize: '12px', fontWeight: 'bold'}} />
+                  <Line name="Requests" type="monotone" dataKey="Requests" stroke="#3b82f6" strokeWidth={3} dot={{r: 4}} />
+                  <Line name="Opens" type="monotone" dataKey="Opens" stroke="#ec4899" strokeWidth={3} dot={{r: 4}} />
+                  <Line name="Clicks" type="monotone" dataKey="Clicks" stroke="#8b5cf6" strokeWidth={3} dot={{r: 4}} />
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Performance Funnel - Counts & Percentage */}
-          <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="text-sm font-bold text-gray-800 mb-6 uppercase tracking-wider">Performance Funnel</h3>
-            <div className="space-y-6">
-              {[
-                { label: 'Total Requests', val: stats.totalRequests, color: 'bg-blue-500' },
-                { label: 'Sent', val: stats.notificationsSent, color: 'bg-green-500' },
-                { label: 'Opened', val: stats.emailsOpened, color: 'bg-pink-500' },
-                { label: 'Clicked', val: stats.emailsClicked, color: 'bg-purple-500' }
-              ].map((item) => {
-                const percent = stats.totalRequests > 0 ? Math.round((item.val / stats.totalRequests) * 100) : 0;
-                return (
-                  <div key={item.label}>
-                    <div className="flex justify-between text-[10px] font-black uppercase text-gray-400 mb-1.5">
-                      <span>{item.label} <span className="text-gray-900 ml-1">({item.val})</span></span>
-                      <span>{percent}%</span>
-                    </div>
-                    <div className="w-full h-2.5 bg-gray-50 rounded-full border border-gray-100 overflow-hidden">
-                      <div className={`${item.color} h-full transition-all duration-1000`} style={{ width: `${percent}%` }}></div>
+          {/* Top Products */}
+          <div className="bg-white p-8 rounded-2xl shadow-lg">
+            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-6">Top Requested Products</h3>
+            <div className="space-y-4">
+              {topProducts.map((product, idx) => (
+                <div key={idx} className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-black text-sm">#{idx + 1}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-gray-900 truncate">{product.productTitle || 'Unknown Product'}</p>
+                    <p className="text-xs text-gray-500 truncate">{product.variantTitle || 'Default'}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-purple-500" 
+                          style={{width: `${(product._count.id / topProducts[0]._count.id) * 100}%`}}
+                        ></div>
+                      </div>
+                      <span className="text-xs font-black text-gray-600">{product._count.id}</span>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Recent Subscribers List */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-8 py-6 border-b border-gray-50">
-            <h3 className="text-sm font-bold uppercase tracking-wider">Recent Subscribers</h3>
+        {/* Recent Subscribers Table */}
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-gray-800">Recent Requests</h3>
+              <p className="text-xs text-gray-500 mt-1">Latest back-in-stock notifications</p>
+            </div>
+            <div className="flex gap-2">
+              <button className="px-4 py-2 text-xs font-bold bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
+                View All
+              </button>
+            </div>
           </div>
-          <table className="w-full text-left">
-            <thead className="bg-[#FAFAFA] text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-              <tr>
-                <th className="px-8 py-4">Customer Email</th>
-                <th className="px-8 py-4 text-center">Open Status</th>
-                <th className="px-8 py-4 text-center">Click Status</th>
-                <th className="px-8 py-4 text-right">Date</th>
-              </tr>
-            </thead>
-            <tbody className="text-xs text-gray-600">
-              {recentSubscribers.map((sub) => (
-                <tr key={sub.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
-                  <td className="px-8 py-5 font-bold text-blue-600">{sub.email}</td>
-                  <td className="px-8 py-5 text-center">
-                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${sub.opened ? 'bg-pink-50 text-pink-500 border border-pink-100' : 'bg-gray-50 text-gray-300'}`}>
-                      {sub.opened ? 'Opened' : 'Unopened'}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5 text-center">
-                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${sub.clicked ? 'bg-purple-50 text-purple-500 border border-purple-100' : 'bg-gray-50 text-gray-300'}`}>
-                      {sub.clicked ? 'Clicked' : 'No Click'}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5 text-right text-gray-400 font-medium">
-                    {new Date(sub.createdAt).toLocaleDateString()}
-                  </td>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gradient-to-r from-gray-50 to-blue-50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Customer</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Product Details</th>
+                  <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-center text-xs font-black text-gray-600 uppercase tracking-wider">Engagement</th>
+                  <th className="px-6 py-4 text-right text-xs font-black text-gray-600 uppercase tracking-wider">Date</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recentSubscribers.map((sub) => (
+                  <tr key={sub.id} className="hover:bg-blue-50 transition-colors group">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white font-black text-sm">
+                          {sub.email.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">{sub.email}</p>
+                          <p className="text-xs text-gray-500">ID: {sub.id.slice(0, 8)}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="max-w-xs">
+                        <p className="text-sm font-bold text-gray-900 truncate">{sub.productTitle || 'Product Name'}</p>
+                        <p className="text-xs text-gray-500 truncate">{sub.variantTitle || 'Default Variant'}</p>
+                        <p className="text-xs text-blue-600 font-medium mt-1">SKU: {sub.variantId?.slice(-8) || 'N/A'}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5 text-center">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase ${
+                        sub.notified 
+                          ? 'bg-green-50 text-green-700 border border-green-200' 
+                          : 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+                      }`}>
+                        <div className={`w-2 h-2 rounded-full ${sub.notified ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                        {sub.notified ? 'Notified' : 'Pending'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                          sub.opened 
+                            ? 'bg-pink-50 text-pink-600 border border-pink-200' 
+                            : 'bg-gray-50 text-gray-400'
+                        }`}>
+                          {sub.opened ? '✓ Opened' : '○ Unopened'}
+                        </span>
+                        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                          sub.clicked 
+                            ? 'bg-purple-50 text-purple-600 border border-purple-200' 
+                            : 'bg-gray-50 text-gray-400'
+                        }`}>
+                          {sub.clicked ? '✓ Clicked' : '○ No Click'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5 text-right">
+                      <p className="text-sm font-bold text-gray-900">{new Date(sub.createdAt).toLocaleDateString()}</p>
+                      <p className="text-xs text-gray-500">{new Date(sub.createdAt).toLocaleTimeString()}</p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
