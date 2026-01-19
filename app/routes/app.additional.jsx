@@ -31,7 +31,7 @@ export async function loader({ request }) {
     ...(dateFilter !== "all" && { createdAt: { gte: dateFilterStart } })
   };
 
-  // 1. Fetching ALL real interaction data
+  // 1. Fetching ACTUAL COUNTS from DB
   const [
     totalRequests, 
     notificationsSent,
@@ -56,37 +56,7 @@ export async function loader({ request }) {
     })
   ]);
 
-  // 2. Calculations
-  const deliveryRate = totalRequests > 0 ? Math.round((notificationsSent / totalRequests) * 100) : 0;
-  const openRate = notificationsSent > 0 ? Math.round((emailsOpened / notificationsSent) * 100) : 0;
-  const clickRate = emailsOpened > 0 ? Math.round((emailsClicked / emailsOpened) * 100) : 0;
-  const conversionRate = totalRequests > 0 ? Math.round((emailsClicked / totalRequests) * 100) : 0;
-
-  // 3. Product Details Fetch
-  const subscribersWithProducts = await Promise.all(
-    recentSubscribers.map(async (sub) => {
-      try {
-        const response = await admin.graphql(
-          `#graphql
-          query getProductVariant($id: ID!) {
-            productVariant(id: $id) {
-              product { title }
-              title
-            }
-          }`,
-          { variables: { id: `gid://shopify/ProductVariant/${sub.variantId}` } }
-        );
-        const data = await response.json();
-        return {
-          ...sub,
-          productTitle: data.data?.productVariant?.product?.title || 'Product Not Found',
-          variantTitle: data.data?.productVariant?.title || '-'
-        };
-      } catch (e) { return { ...sub, productTitle: 'Error', variantTitle: '-' }; }
-    })
-  );
-
-  // 4. Trend Data with Opens and Clicks added
+  // 2. Trend Data with Actual Daily Counts
   const dateMap = {};
   allRecords.forEach(item => {
     const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -101,18 +71,18 @@ export async function loader({ request }) {
 
   return json({
     stats: { 
-      totalRequests, notificationsSent, deliveryRate, 
-      emailsOpened, openRate, 
-      emailsClicked, clickRate, 
-      conversionRate 
+      totalRequests, 
+      notificationsSent, 
+      emailsOpened, 
+      emailsClicked 
     },
-    recentSubscribers: subscribersWithProducts,
+    recentSubscribers,
     trendData: Object.values(dateMap),
     filters: { search: searchQuery, dateRange: dateFilter }
   });
 }
 
-export default function BackInStockDashboard() {
+export default function Dashboard() {
   const { stats, recentSubscribers, trendData, filters } = useLoaderData();
   const submit = useSubmit();
 
@@ -122,108 +92,110 @@ export default function BackInStockDashboard() {
         <Icon size={24} className={iconColor} />
       </div>
       <div>
-        <p className="text-xs font-semibold text-gray-500 mb-0.5">{title}</p>
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{title}</p>
         <p className="text-2xl font-bold text-gray-900">{value}</p>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#FDFDFD] p-6 md:p-10 font-sans text-slate-900">
+    <div className="min-h-screen bg-[#FAFAFA] p-6 md:p-10 font-sans">
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
       
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex justify-between items-start">
-          <h1 className="text-2xl font-bold">Back In Stock Dashboard</h1>
-          <button className="bg-black text-white px-6 py-2 rounded-full text-sm font-semibold">Settings</button>
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-extrabold tracking-tight">Back In Stock Dashboard</h1>
+          <button className="bg-black text-white px-6 py-2 rounded-full text-xs font-bold uppercase shadow-sm">Settings</button>
         </div>
 
-        <form onChange={(e) => submit(e.currentTarget)} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <select name="dateRange" defaultValue={filters.dateRange} className="bg-white border p-2.5 rounded-lg text-sm">
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="all">All Time</option>
-          </select>
-          <input name="search" defaultValue={filters.search} placeholder="Product Search" className="md:col-span-2 border p-2.5 rounded-lg text-sm" />
-          <select className="bg-white border p-2.5 rounded-lg text-sm"><option>All Channels</option></select>
-        </form>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Stats Grid - Now Showing Actual Numbers */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard title="Total Requests" value={stats.totalRequests} icon={FileText} color="bg-blue-100" iconColor="text-blue-600" />
           <MetricCard title="Notifications Sent" value={stats.notificationsSent} icon={Bell} color="bg-green-100" iconColor="text-green-600" />
-          <MetricCard title="Delivery Rate" value={`${stats.deliveryRate}%`} icon={Truck} color="bg-cyan-100" iconColor="text-cyan-600" />
-          <MetricCard title="Open Rate" value={`${stats.openRate}%`} icon={Eye} color="bg-emerald-100" iconColor="text-emerald-600" />
-          <MetricCard title="Click Rate" value={`${stats.clickRate}%`} icon={MousePointer2} color="bg-purple-100" iconColor="text-purple-600" />
-          <MetricCard title="Conversion Rate" value={`${stats.conversionRate}%`} icon={TrendingUp} color="bg-indigo-100" iconColor="text-indigo-600" />
+          <MetricCard title="Emails Opened" value={stats.emailsOpened} icon={Eye} color="bg-pink-100" iconColor="text-pink-600" />
+          <MetricCard title="Link Clicks" value={stats.emailsClicked} icon={MousePointer2} color="bg-purple-100" iconColor="text-purple-600" />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <div className="lg:col-span-3 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-            <h3 className="text-md font-bold mb-6">Interaction Trends</h3>
+        {/* Middle Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          {/* Chart with Real Numbers */}
+          <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <h3 className="text-sm font-bold text-gray-800 mb-6 uppercase tracking-wider">Requests vs Interactions</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
                   <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                  <Tooltip />
+                  <Tooltip cursor={{fill: '#f9f9f9'}} />
                   <Legend iconType="circle" />
-                  <Bar dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={10} />
-                  <Bar dataKey="Opens" fill="#10b981" radius={[4, 4, 0, 0]} barSize={10} />
-                  <Bar dataKey="Clicks" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={10} />
+                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={10} />
+                  <Bar name="Opens" dataKey="Opens" fill="#ec4899" radius={[4, 4, 0, 0]} barSize={10} />
+                  <Bar name="Clicks" dataKey="Clicks" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={10} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-            <h3 className="text-md font-bold mb-6">Performance Funnel</h3>
-            <div className="space-y-5">
+          {/* Performance Funnel - Counts & Percentage */}
+          <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <h3 className="text-sm font-bold text-gray-800 mb-6 uppercase tracking-wider">Performance Funnel</h3>
+            <div className="space-y-6">
               {[
-                { label: 'Sent', val: stats.notificationsSent, total: stats.totalRequests, color: 'bg-blue-500' },
-                { label: 'Opened', val: stats.emailsOpened, total: stats.totalRequests, color: 'bg-green-500' },
-                { label: 'Clicked', val: stats.emailsClicked, total: stats.totalRequests, color: 'bg-purple-500' }
-              ].map((item) => (
-                <div key={item.label}>
-                  <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase mb-1">
-                    <span>{item.label} ({item.val})</span>
-                    <span>{item.total > 0 ? Math.round((item.val/item.total)*100) : 0}%</span>
+                { label: 'Total Requests', val: stats.totalRequests, color: 'bg-blue-500' },
+                { label: 'Sent', val: stats.notificationsSent, color: 'bg-green-500' },
+                { label: 'Opened', val: stats.emailsOpened, color: 'bg-pink-500' },
+                { label: 'Clicked', val: stats.emailsClicked, color: 'bg-purple-500' }
+              ].map((item) => {
+                const percent = stats.totalRequests > 0 ? Math.round((item.val / stats.totalRequests) * 100) : 0;
+                return (
+                  <div key={item.label}>
+                    <div className="flex justify-between text-[10px] font-black uppercase text-gray-400 mb-1.5">
+                      <span>{item.label} <span className="text-gray-900 ml-1">({item.val})</span></span>
+                      <span>{percent}%</span>
+                    </div>
+                    <div className="w-full h-2.5 bg-gray-50 rounded-full border border-gray-100 overflow-hidden">
+                      <div className={`${item.color} h-full transition-all duration-1000`} style={{ width: `${percent}%` }}></div>
+                    </div>
                   </div>
-                  <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`${item.color} h-full transition-all`} style={{ width: `${item.total > 0 ? (item.val/item.total)*100 : 0}%` }}></div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 font-bold uppercase text-gray-400 border-b">
+        {/* Recent Subscribers List */}
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-8 py-6 border-b border-gray-50">
+            <h3 className="text-sm font-bold uppercase tracking-wider">Recent Subscribers</h3>
+          </div>
+          <table className="w-full text-left">
+            <thead className="bg-[#FAFAFA] text-[10px] font-bold text-gray-400 uppercase tracking-widest">
               <tr>
-                <th className="px-6 py-4">Email</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4 text-center">Interactions</th>
-                <th className="px-6 py-4 text-right">Date</th>
+                <th className="px-8 py-4">Customer Email</th>
+                <th className="px-8 py-4 text-center">Open Status</th>
+                <th className="px-8 py-4 text-center">Click Status</th>
+                <th className="px-8 py-4 text-right">Date</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="text-xs text-gray-600">
               {recentSubscribers.map((sub) => (
-                <tr key={sub.id} className="border-b last:border-0 hover:bg-gray-50">
-                  <td className="px-6 py-5 text-blue-600 font-medium">{sub.email}</td>
-                  <td className="px-6 py-5">
-                    <span className={`px-3 py-1 rounded-full font-bold text-[10px] uppercase ${sub.notified ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                      {sub.notified ? 'Sent' : 'Waiting'}
+                <tr key={sub.id} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
+                  <td className="px-8 py-5 font-bold text-blue-600">{sub.email}</td>
+                  <td className="px-8 py-5 text-center">
+                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${sub.opened ? 'bg-pink-50 text-pink-500 border border-pink-100' : 'bg-gray-50 text-gray-300'}`}>
+                      {sub.opened ? 'Opened' : 'Unopened'}
                     </span>
                   </td>
-                  <td className="px-6 py-5">
-                    <div className="flex justify-center gap-2">
-                      <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-bold ${sub.opened ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400'}`}>O</div>
-                      <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-bold ${sub.clicked ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-400'}`}>C</div>
-                    </div>
+                  <td className="px-8 py-5 text-center">
+                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${sub.clicked ? 'bg-purple-50 text-purple-500 border border-purple-100' : 'bg-gray-50 text-gray-300'}`}>
+                      {sub.clicked ? 'Clicked' : 'No Click'}
+                    </span>
                   </td>
-                  <td className="px-6 py-5 text-right text-gray-400">{new Date(sub.createdAt).toLocaleDateString()}</td>
+                  <td className="px-8 py-5 text-right text-gray-400 font-medium">
+                    {new Date(sub.createdAt).toLocaleDateString()}
+                  </td>
                 </tr>
               ))}
             </tbody>
