@@ -11,8 +11,6 @@ async function sendEmail(emailData) {
       },
       body: JSON.stringify(emailData)
     });
-    const data = await res.json();
-    if (!res.ok) console.error("Resend specific error:", data);
     return res.ok;
   } catch (err) {
     console.error("Fetch failed:", err.message);
@@ -25,22 +23,32 @@ export async function action({ request }) {
   const inventoryItemId = String(payload.inventory_item_id);
   const available = Number(payload.available);
   
-  // App URL ensure trailing slash is handled
-  let APP_URL = process.env.SHOPIFY_APP_URL || "https://notify-out-stock-production.up.railway.app/";
-  if (!APP_URL.endsWith('/')) APP_URL += '/';
+  // 1. Database se Admin ki Dynamic Settings fetch karein
+  const settings = await prisma.appSettings.findUnique({
+    where: { shop: shop }
+  }) || { 
+    adminEmail: 'digittrix.savita@gmail.com', 
+    subjectLine: 'Out of stock products reminder',
+    includeSku: true,
+    includeVendor: true,
+    includePrice: false
+  };
+
+  let APP_URL = process.env.SHOPIFY_APP_URL || "";
+  if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
 
   try {
-    console.log(`Checking stock for ${shop}: Item ${inventoryItemId}, Qty: ${available}`);
-
     const response = await admin.graphql(`
       query {
         inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
+          sku
           variant {
             displayName
             price
             product {
               title
               handle
+              vendor
               featuredImage { url }
             }
           }
@@ -50,80 +58,72 @@ export async function action({ request }) {
     `);
 
     const json = await response.json();
-    const variant = json.data?.inventoryItem?.variant;
+    const invItem = json.data?.inventoryItem;
+    const variant = invItem?.variant;
     const currency = json.data?.shop?.currencyCode || "USD";
 
     if (!variant) return new Response("Variant not found", { status: 200 });
 
-    const productTitle = variant.product.title;
-    const variantTitle = variant.displayName;
-    const price = variant.price;
-    const imageUrl = variant.product.featuredImage?.url || "";
-    const productHandle = variant.product.handle;
-
-    // --- CASE 1: STOCK IS BACK (Send to Customers) ---
+    // --- CASE 1: BACK IN STOCK (Customers) ---
     if (available > 0) {
       const subscribers = await prisma.backInStock.findMany({
         where: { inventoryItemId: inventoryItemId, notified: false },
       });
 
-      if (subscribers.length > 0) {
-        for (const sub of subscribers) {
-          const openTrackingUrl = `${APP_URL}api/track-open?id=${sub.id}`;
-          const targetStoreUrl = `https://${shop}/products/${productHandle}`;
-          const clickTrackingUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(targetStoreUrl)}`;
+      for (const sub of subscribers) {
+        const targetStoreUrl = `https://${shop}/products/${variant.product.handle}`;
+        const clickTrackingUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(targetStoreUrl)}`;
 
-          const backInStockHtml = `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; padding: 20px;">
-              <h1 style="text-align: center; color: #764ba2;">🎉 Back in Stock!</h1>
-              ${imageUrl ? `<img src="${imageUrl}" style="width: 100%; max-width: 200px; display: block; margin: 0 auto;" />` : ''}
-              <h2 style="text-align: center;">${productTitle}</h2>
-              <p style="text-align: center; color: #666;">${variantTitle} is now available for ${currency} ${price}</p>
-              <div style="text-align: center; margin-top: 20px;">
-                <a href="${clickTrackingUrl}" style="background: #764ba2; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Shop Now</a>
-              </div>
-              <img src="${openTrackingUrl}" width="1" height="1" style="display:none !important;" />
+        const html = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; padding: 20px;">
+            <h1 style="color: #4f46e5; text-align: center;">🎉 It's Back!</h1>
+            <p>Hi, <strong>${variant.product.title}</strong> is back in stock.</p>
+            <p>Price: ${currency} ${variant.price}</p>
+            <div style="text-align: center; margin-top: 20px;">
+              <a href="${clickTrackingUrl}" style="background: #000; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px;">Buy Now</a>
             </div>
-          `;
+          </div>
+        `;
 
-          const sent = await sendEmail({
-            from: 'Restock Alert <onboarding@resend.dev>',
-            to: sub.email,
-            subject: `🎉 Back in Stock: ${productTitle}`,
-            html: backInStockHtml
-          });
+        const sent = await sendEmail({
+          from: 'Restock Alert <onboarding@resend.dev>',
+          to: sub.email,
+          subject: `🎉 Back in Stock: ${variant.product.title}`,
+          html: html
+        });
 
-          if (sent) {
-            await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
-          }
-          await new Promise(r => setTimeout(r, 500));
+        if (sent) {
+          await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
         }
       }
     } 
     
-    // --- CASE 2: STOCK IS ZERO (Send to Admin) ---
+    // --- CASE 2: OUT OF STOCK (Admin Alert) ---
     else if (available <= 0) {
-      console.log("Sending Out of Stock alert to Admin...");
       const outOfStockHtml = `
-        <div style="font-family: sans-serif; padding: 20px; border: 2px solid #ff6b6b;">
-          <h2 style="color: #ff6b6b;">🚨 Out of Stock Alert</h2>
-          <p>The following item just hit 0 stock on your store <strong>${shop}</strong>:</p>
-          <p><strong>Product:</strong> ${productTitle}<br><strong>Variant:</strong> ${variantTitle}</p>
-          <a href="https://${shop}/admin" style="color: #667eea;">View in Shopify Admin</a>
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ff6b6b; border-radius: 12px;">
+          <h2 style="color: #ff6b6b;">🚨 ${settings.subjectLine}</h2>
+          <p>Product: <strong>${variant.product.title}</strong></p>
+          <p>Variant: ${variant.displayName}</p>
+          ${settings.includeSku ? `<p>SKU: ${invItem.sku}</p>` : ''}
+          ${settings.includeVendor ? `<p>Vendor: ${variant.product.vendor}</p>` : ''}
+          ${settings.includePrice ? `<p>Price: ${currency} ${variant.price}</p>` : ''}
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+          <a href="https://${shop}/admin" style="color: #4f46e5; font-weight: bold;">Open Shopify Admin</a>
         </div>
       `;
 
       await sendEmail({
         from: 'Stock Alert <onboarding@resend.dev>',
-        to: 'digittrix.savita@gmail.com', // Aapki Admin ID
-        subject: `🚨 Out of Stock: ${productTitle}`,
+        to: settings.adminEmail, // Dynamic Email from Settings
+        subject: `🚨 ${settings.subjectLine}`,
         html: outOfStockHtml
       });
     }
 
     return new Response("OK", { status: 200 });
   } catch (err) {
-    console.error("Critical Webhook Error:", err);
+    console.error("Webhook Error:", err);
     return new Response("Error", { status: 500 });
   }
 }

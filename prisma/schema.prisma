@@ -65,3 +65,15 @@ model BackInStock {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
 }
+
+model AppSettings {
+  id           Int      @id @default(autoincrement())
+  shop         String   @unique
+  adminEmail   String   @default("digittrix.savita@gmail.com")
+  subjectLine  String   @default("Out of stock products reminder")
+  includeSku   Boolean  @default(true)
+  includeVendor Boolean @default(true)
+  includePrice Boolean  @default(false)
+  includeTags  Boolean  @default(false)
+  updatedAt    DateTime @updatedAt
+}
