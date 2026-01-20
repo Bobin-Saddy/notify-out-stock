@@ -11,8 +11,6 @@ async function sendEmail(emailData) {
       },
       body: JSON.stringify(emailData)
     });
-    const result = await res.json();
-    console.log("Resend API Response:", result); // Debugging ke liye
     return res.ok;
   } catch (err) {
     console.error("Email failed:", err.message);
@@ -21,33 +19,28 @@ async function sendEmail(emailData) {
 }
 
 export async function action({ request }) {
-  // 1. Webhook Authentication
   const { payload, shop, admin } = await authenticate.webhook(request);
-  
-  // Shopify inventory level webhooks mein kabhi kabhi field names alag hote hain
   const inventoryItemId = String(payload.inventory_item_id);
   
-  // Available quantity check logic (robust version)
+  // Robust Quantity Check: Handle different webhook payload structures
   const available = payload.available !== undefined ? Number(payload.available) : 
                     (payload.available_adjustment !== undefined ? Number(payload.available_adjustment) : null);
 
-  console.log(`Processing Webhook for ${shop}. Item: ${inventoryItemId}, Qty: ${available}`);
+  if (available === null) return new Response("No quantity data", { status: 200 });
 
-  // 2. Fetch Settings from DB
+  // 1. Fetch Latest Settings (No caching issues)
   const settings = await prisma.appSettings.findUnique({ where: { shop: shop } }) || { 
     adminEmail: 'digittrix.savita@gmail.com', 
-    subjectLine: 'Product Restock Alert', 
+    subjectLine: 'Out of stock products reminder', 
     includeSku: true, 
     includeVendor: true, 
     includePrice: true 
   };
 
-  // 3. App URL for Tracking
   let APP_URL = process.env.SHOPIFY_APP_URL || "";
   if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
 
   try {
-    // 4. Get Product/Variant Data via GraphQL
     const response = await admin.graphql(`
       query {
         inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
@@ -60,6 +53,7 @@ export async function action({ request }) {
               handle
               vendor
               featuredImage { url }
+              tags
             }
           }
         }
@@ -70,19 +64,15 @@ export async function action({ request }) {
     const json = await response.json();
     const inv = json.data?.inventoryItem;
     const variant = inv?.variant;
-
-    if (!variant) {
-      console.error("Variant not found for ID:", inventoryItemId);
-      return new Response("Variant Not Found", { status: 200 });
-    }
+    if (!variant) return new Response("Variant not found", { status: 200 });
 
     const currency = json.data?.shop?.currencyCode || "USD";
     const shopName = json.data?.shop?.name;
     const productImg = variant.product.featuredImage?.url || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
     const productUrl = `https://${shop}/products/${variant.product.handle}`;
 
-    // --- CASE 1: BACK IN STOCK (Sent to Customers) ---
-    if (available !== null && available > 0) {
+    // --- CASE 1: BACK IN STOCK ---
+    if (available > 0) {
       const subscribers = await prisma.backInStock.findMany({ 
         where: { inventoryItemId, notified: false } 
       });
@@ -94,24 +84,20 @@ export async function action({ request }) {
         const customerHtml = `
           <div style="background-color: #f3f4f6; padding: 40px 0; font-family: sans-serif;">
             <table align="center" width="100%" style="max-width: 550px; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px rgba(0,0,0,0.1);">
-              <tr>
-                <td style="padding: 40px; text-align: center;">
-                  <h1 style="color: #111827; font-size: 28px; font-weight: 800; margin: 0;">Back In Stock!</h1>
-                  <p style="color: #4b5563; margin-top: 10px;">A product you liked is available again at <strong>${shopName}</strong>.</p>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding: 0 40px;">
-                  <div style="background-color: #f9fafb; border-radius: 20px; padding: 30px; text-align: center;">
-                    <img src="${productImg}" style="width: 100%; max-width: 250px; border-radius: 12px; margin-bottom: 20px;">
-                    <h2 style="font-size: 20px; color: #111827; margin: 0;">${variant.product.title}</h2>
-                    <p style="font-size: 24px; font-weight: 900; color: #4f46e5; margin: 15px 0;">${currency} ${variant.price}</p>
-                    <a href="${clickUrl}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold;">Buy It Now</a>
-                  </div>
-                </td>
-              </tr>
+              <tr><td style="padding: 40px; text-align: center;">
+                <h1 style="color: #111827; font-size: 28px; font-weight: 800;">Back In Stock!</h1>
+                <p>Available now at <strong>${shopName}</strong>.</p>
+              </td></tr>
+              <tr><td style="padding: 0 40px; text-align: center;">
+                <div style="background-color: #f9fafb; border-radius: 20px; padding: 30px;">
+                  <img src="${productImg}" style="width: 100%; max-width: 250px; border-radius: 12px; margin-bottom: 20px;">
+                  <h2>${variant.product.title}</h2>
+                  ${settings.includePrice ? `<p style="font-size: 24px; font-weight: 900; color: #4f46e5;">${currency} ${variant.price}</p>` : ''}
+                  <a href="${clickUrl}" style="display: inline-block; background-color: #111827; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold;">Buy Now</a>
+                </div>
+              </td></tr>
             </table>
-            <img src="${openUrl}" width="1" height="1" style="display:none !important;" />
+            <img src="${openUrl}" width="1" height="1" style="display:none;" />
           </div>
         `;
 
@@ -121,44 +107,35 @@ export async function action({ request }) {
           subject: `🎉 Back in Stock: ${variant.product.title}`,
           html: customerHtml
         });
-
-        if (sent) {
-          await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
-        }
+        if (sent) await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
       }
     } 
     
-    // --- CASE 2: OUT OF STOCK (Sent to Admin) ---
-    else if (available !== null && available <= 0) {
-      console.log("Sending Out of Stock mail to Admin:", settings.adminEmail);
-      
+    // --- CASE 2: OUT OF STOCK (Admin Alert) ---
+    else if (available <= 0) {
       const adminHtml = `
         <div style="font-family: sans-serif; padding: 30px; background-color: #fffafb; border: 1px solid #fee2e2; border-radius: 16px; max-width: 500px; margin: 20px auto;">
-          <div style="display: flex; align-items: center; margin-bottom: 15px;">
-            <span style="font-size: 24px; margin-right: 10px;">🚨</span>
-            <h2 style="color: #991b1b; margin: 0; font-size: 18px;">${settings.subjectLine}</h2>
-          </div>
-          <div style="background-color: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #fecaca;">
-            <p style="margin: 0 0 10px 0;"><strong>Product:</strong> ${variant.product.title}</p>
-            <p style="margin: 0 0 10px 0;"><strong>Variant:</strong> ${variant.displayName}</p>
-            ${settings.includeSku ? `<p style="margin: 0 0 10px 0; color: #6b7280;"><strong>SKU:</strong> ${inv.sku}</p>` : ''}
-            ${settings.includeVendor ? `<p style="margin: 0 0 10px 0; color: #6b7280;"><strong>Vendor:</strong> ${variant.product.vendor}</p>` : ''}
-            ${settings.includePrice ? `<p style="margin: 0 0 10px 0; color: #111827;"><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
+          <h2 style="color: #991b1b; font-size: 20px;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
+          <div style="background-color: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #fecaca; margin-top: 15px;">
+            <p><strong>Product:</strong> ${variant.product.title}</p>
+            <p><strong>Variant:</strong> ${variant.displayName}</p>
+            ${settings.includeSku ? `<p><strong>SKU:</strong> ${inv.sku}</p>` : ''}
+            ${settings.includeVendor ? `<p><strong>Vendor:</strong> ${variant.product.vendor}</p>` : ''}
+            ${settings.includePrice ? `<p><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
+            ${settings.includeTags ? `<p><strong>Tags:</strong> ${variant.product.tags?.join(", ")}</p>` : ''}
           </div>
           <div style="margin-top: 25px; text-align: center;">
-            <a href="https://${shop}/admin/products" style="background-color: #111827; color: white; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 14px;">Update Stock in Shopify</a>
+            <a href="https://${shop}/admin/products" style="background-color: #111827; color: white; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold;">Manage Inventory</a>
           </div>
         </div>
       `;
 
-      const adminMailSent = await sendEmail({
-        from: 'Inventory Alerts <onboarding@resend.dev>',
-        to: settings.adminEmail, // Database se li gayi email
-        subject: `🚨 Stock Alert: ${variant.product.title}`,
+      await sendEmail({
+        from: 'Inventory Manager <onboarding@resend.dev>',
+        to: settings.adminEmail,
+        subject: `🚨 Stock Out: ${variant.product.title}`,
         html: adminHtml
       });
-
-      console.log("Admin Mail Status:", adminMailSent ? "Sent" : "Failed");
     }
 
     return new Response("OK", { status: 200 });
