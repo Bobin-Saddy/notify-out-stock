@@ -1,125 +1,243 @@
-import React, { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useEffect } from "react";
+import { useFetcher } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate } from "../shopify.server";
 
-export default function SettingsPage() {
-  const [email, setEmail] = useState("");
+export const loader = async ({ request }) => {
+  await authenticate.admin(request);
+
+  return null;
+};
+
+export const action = async ({ request }) => {
+  const { admin } = await authenticate.admin(request);
+  const color = ["Red", "Orange", "Yellow", "Green"][
+    Math.floor(Math.random() * 4)
+  ];
+  const response = await admin.graphql(
+    `#graphql
+      mutation populateProduct($product: ProductCreateInput!) {
+        productCreate(product: $product) {
+          product {
+            id
+            title
+            handle
+            status
+            variants(first: 10) {
+              edges {
+                node {
+                  id
+                  price
+                  barcode
+                  createdAt
+                }
+              }
+            }
+          }
+        }
+      }`,
+    {
+      variables: {
+        product: {
+          title: `${color} Snowboard`,
+        },
+      },
+    },
+  );
+  const responseJson = await response.json();
+  const product = responseJson.data.productCreate.product;
+  const variantId = product.variants.edges[0].node.id;
+  const variantResponse = await admin.graphql(
+    `#graphql
+    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+        productVariants {
+          id
+          price
+          barcode
+          createdAt
+        }
+      }
+    }`,
+    {
+      variables: {
+        productId: product.id,
+        variants: [{ id: variantId, price: "100.00" }],
+      },
+    },
+  );
+  const variantResponseJson = await variantResponse.json();
+
+  return {
+    product: responseJson.data.productCreate.product,
+    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
+  };
+};
+
+export default function Index() {
+  const fetcher = useFetcher();
+  const shopify = useAppBridge();
+  const isLoading =
+    ["loading", "submitting"].includes(fetcher.state) &&
+    fetcher.formMethod === "POST";
+
+  useEffect(() => {
+    if (fetcher.data?.product?.id) {
+      shopify.toast.show("Product created");
+    }
+  }, [fetcher.data?.product?.id, shopify]);
+  const generateProduct = () => fetcher.submit({}, { method: "POST" });
 
   return (
-    <div className="bg-[#f6f6f7] min-h-screen p-8 font-sans text-[#202223]">
-      {/* External Tailwind Link for quick rendering */}
-      <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+    <s-page heading="Shopify app template">
+      <s-button slot="primary-action" onClick={generateProduct}>
+        Generate a product
+      </s-button>
 
-      <div className="max-w-4xl mx-auto space-y-8">
-        
-        {/* Breadcrumb / Back Button */}
-        <div className="flex items-center gap-2 mb-6 cursor-pointer hover:opacity-70 transition-all">
-          <ArrowLeft size={18} />
-          <span className="font-bold text-lg">Basic Settings</span>
-        </div>
+      <s-section heading="Congrats on creating a new Shopify app 🎉">
+        <s-paragraph>
+          This embedded app template uses{" "}
+          <s-link
+            href="https://shopify.dev/docs/apps/tools/app-bridge"
+            target="_blank"
+          >
+            App Bridge
+          </s-link>{" "}
+          interface examples like an{" "}
+          <s-link href="/app/additional">additional page in the app nav</s-link>
+          , as well as an{" "}
+          <s-link
+            href="https://shopify.dev/docs/api/admin-graphql"
+            target="_blank"
+          >
+            Admin GraphQL
+          </s-link>{" "}
+          mutation demo, to provide a starting point for app development.
+        </s-paragraph>
+      </s-section>
+      <s-section heading="Get started with products">
+        <s-paragraph>
+          Generate a product with GraphQL and get the JSON output for that
+          product. Learn more about the{" "}
+          <s-link
+            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
+            target="_blank"
+          >
+            productCreate
+          </s-link>{" "}
+          mutation in our API references.
+        </s-paragraph>
+        <s-stack direction="inline" gap="base">
+          <s-button
+            onClick={generateProduct}
+            {...(isLoading ? { loading: true } : {})}
+          >
+            Generate a product
+          </s-button>
+          {fetcher.data?.product && (
+            <s-button
+              onClick={() => {
+                shopify.intents.invoke?.("edit:shopify/Product", {
+                  value: fetcher.data?.product?.id,
+                });
+              }}
+              target="_blank"
+              variant="tertiary"
+            >
+              Edit product
+            </s-button>
+          )}
+        </s-stack>
+        {fetcher.data?.product && (
+          <s-section heading="productCreate mutation">
+            <s-stack direction="block" gap="base">
+              <s-box
+                padding="base"
+                borderWidth="base"
+                borderRadius="base"
+                background="subdued"
+              >
+                <pre style={{ margin: 0 }}>
+                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
+                </pre>
+              </s-box>
 
-        {/* General Settings Section */}
-        <div className="space-y-6">
-          <h2 className="text-xl font-bold">General Settings</h2>
-          
-          <div className="space-y-2">
-            <label className="text-sm font-semibold">Emails</label>
-            <div className="flex gap-2">
-              <input 
-                type="email" 
-                placeholder="Type your email here...." 
-                className="flex-1 bg-white border border-gray-300 rounded-lg px-4 py-2.5 outline-none focus:border-black transition-all"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <button className="bg-black text-white px-8 py-2.5 rounded-full font-bold text-sm tracking-wide">
-                ADD
-              </button>
-            </div>
-            <p className="text-[13px] text-gray-500 mt-2">
-              Don't miss out! Currently, you can add only one email address for inventory alerts. 
-              <span className="text-blue-600 cursor-pointer ml-1 underline">Upgrade your plan</span> today to add up to five email addresses and ensure your team stays informed about low-stock warnings!
-            </p>
-          </div>
+              <s-heading>productVariantsBulkUpdate mutation</s-heading>
+              <s-box
+                padding="base"
+                borderWidth="base"
+                borderRadius="base"
+                background="subdued"
+              >
+                <pre style={{ margin: 0 }}>
+                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
+                </pre>
+              </s-box>
+            </s-stack>
+          </s-section>
+        )}
+      </s-section>
 
-          <div className="space-y-1">
-            <label className="text-sm font-semibold">Email Notification Frequency</label>
-            <p className="text-[13px] text-gray-500">
-              Email notifications are set to Once per hour by default. 
-              <span className="text-blue-600 cursor-pointer ml-1 underline">Upgrade your plan</span> for more frequency options.
-            </p>
-          </div>
-        </div>
+      <s-section slot="aside" heading="App template specs">
+        <s-paragraph>
+          <s-text>Framework: </s-text>
+          <s-link href="https://reactrouter.com/" target="_blank">
+            React Router
+          </s-link>
+        </s-paragraph>
+        <s-paragraph>
+          <s-text>Interface: </s-text>
+          <s-link
+            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
+            target="_blank"
+          >
+            Polaris web components
+          </s-link>
+        </s-paragraph>
+        <s-paragraph>
+          <s-text>API: </s-text>
+          <s-link
+            href="https://shopify.dev/docs/api/admin-graphql"
+            target="_blank"
+          >
+            GraphQL
+          </s-link>
+        </s-paragraph>
+        <s-paragraph>
+          <s-text>Database: </s-text>
+          <s-link href="https://www.prisma.io/" target="_blank">
+            Prisma
+          </s-link>
+        </s-paragraph>
+      </s-section>
 
-        {/* Inventory Alert Settings Section */}
-        <div className="space-y-4 pt-4">
-          <h2 className="text-xl font-bold">Inventory Alert Settings</h2>
-          
-          <div className="space-y-2">
-            <label className="text-sm font-semibold">Global Inventory Restock Status</label>
-            <div className="bg-white border border-gray-200 rounded-xl p-2 flex justify-between items-center shadow-sm">
-              <input 
-                disabled
-                value='"Auto Restock Inventory (OOS)" is available on the "Growth" plan and higher.' 
-                className="flex-1 bg-transparent px-3 text-gray-500 text-sm italic outline-none"
-              />
-              <button className="bg-black text-white px-6 py-2 rounded-full font-bold text-[11px] tracking-widest uppercase">
-                UPGRADE NOW
-              </button>
-            </div>
-            <p className="text-[13px] text-gray-500">
-              Your current plan (Free) doesn't include this feature. Upgrade your plan to unlock Auto Restock Inventory (OOS).
-            </p>
-          </div>
-        </div>
-
-        {/* Email Display Preferences */}
-        <div className="space-y-4 pt-4">
-          <h2 className="text-xl font-bold">Email Display Preferences</h2>
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm grid grid-cols-3 gap-6">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded border-gray-300 accent-black" />
-              <span className="text-sm font-medium text-gray-600">Update inventory via email?</span>
-            </label>
-            
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded border-gray-300 accent-black" />
-              <span className="text-sm font-medium text-gray-600">Include price in email?</span>
-            </label>
-
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded border-gray-300 accent-black" />
-              <span className="text-sm font-medium text-gray-600">Include product tags in email?</span>
-            </label>
-
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" defaultChecked className="w-4 h-4 rounded border-gray-300 accent-black" />
-              <span className="text-sm font-medium text-gray-600">Include SKU in email?</span>
-            </label>
-
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" defaultChecked className="w-4 h-4 rounded border-gray-300 accent-black" />
-              <span className="text-sm font-medium text-gray-600">Include vendor in email?</span>
-            </label>
-          </div>
-        </div>
-
-        {/* Additional Settings Section */}
-        <div className="space-y-4 pt-4">
-          <h2 className="text-xl font-bold">Additional Settings (Optional)</h2>
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700">Email reminder subject line</label>
-            <input 
-              type="text" 
-              placeholder="Default: Out of stock products reminder" 
-              className="w-full bg-white border border-gray-300 rounded-2xl px-6 py-4 outline-none focus:ring-1 ring-black transition-all shadow-sm"
-            />
-            <p className="text-[13px] text-gray-500 italic">
-              Enter 15–50 characters. Leave blank to use the default subject.
-            </p>
-          </div>
-        </div>
-
-      </div>
-    </div>
+      <s-section slot="aside" heading="Next steps">
+        <s-unordered-list>
+          <s-list-item>
+            Build an{" "}
+            <s-link
+              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
+              target="_blank"
+            >
+              example app
+            </s-link>
+          </s-list-item>
+          <s-list-item>
+            Explore Shopify&apos;s API with{" "}
+            <s-link
+              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
+              target="_blank"
+            >
+              GraphiQL
+            </s-link>
+          </s-list-item>
+        </s-unordered-list>
+      </s-section>
+    </s-page>
   );
 }
+
+export const headers = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};
