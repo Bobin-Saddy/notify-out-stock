@@ -75,5 +75,6 @@ model AppSettings {
   includeVendor Boolean @default(true)
   includePrice Boolean  @default(false)
   includeTags  Boolean  @default(false)
+  updateViaEmail   Boolean  @default(false) // Naya feature toggle
   updatedAt    DateTime @updatedAt
 }

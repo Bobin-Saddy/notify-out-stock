@@ -1,7 +1,10 @@
 import React from 'react';
 import { json } from "@remix-run/node";
-import { useLoaderData, useSubmit, Form, useNavigation } from "react-router";
-import { ArrowLeft, Loader2, Mail, ShieldCheck, Layout, PlusCircle } from 'lucide-react';
+import { useLoaderData, useNavigation, Form } from "react-router";
+import { 
+  ArrowLeft, Loader2, Mail, ShieldCheck, Layout, Zap, 
+  CheckCircle2, BellRing, Settings2, MessageSquare
+} from 'lucide-react';
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
@@ -33,85 +36,112 @@ export default function SettingsPage() {
   const isSaving = navigation.state === "submitting";
 
   return (
-    <div className="bg-[#f4f6f8] min-h-screen p-10 font-sans text-slate-800">
+    <div className="bg-[#F8FAFC] min-h-screen pb-20 font-sans text-slate-900">
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
 
-      <Form method="POST" className="max-w-3xl mx-auto space-y-10">
-        {/* Modern Header */}
-        <div className="flex items-center justify-between">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4 mb-8">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="bg-white p-2 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:bg-slate-50">
-                <ArrowLeft size={20} />
+            <div className="p-2 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200 transition-all">
+              <ArrowLeft size={20} />
             </div>
             <div>
-                <h1 className="text-2xl font-black tracking-tight">Configuration</h1>
-                <p className="text-slate-500 text-sm">Manage your inventory alerts and email branding.</p>
+              <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 text-slate-800">
+                <Settings2 size={22} className="text-indigo-600" /> Basic Settings
+              </h1>
             </div>
           </div>
           <button 
-             type="submit" 
-             disabled={isSaving}
-             className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-100 transition-all flex items-center gap-2"
+            form="settings-form" 
+            type="submit" 
+            disabled={isSaving} 
+            className="bg-black hover:bg-slate-800 text-white px-8 py-2.5 rounded-full font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95"
           >
-            {isSaving ? <Loader2 className="animate-spin" size={18} /> : <PlusCircle size={18} />}
-            {settings ? "Save Changes" : "Activate Settings"}
+            {isSaving ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+            {isSaving ? "SAVING..." : (settings ? "UPDATE" : "SAVE")}
           </button>
         </div>
+      </div>
 
-        {/* Section 1: Admin Alerts */}
-        <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm space-y-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-indigo-50 text-indigo-600 p-2 rounded-lg"><Mail size={20}/></div>
-            <h2 className="text-lg font-bold">Admin Notification</h2>
-          </div>
+      <Form method="POST" id="settings-form" className="max-w-5xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8">
+        
+        {/* Left Side: Main Settings */}
+        <div className="md:col-span-2 space-y-8">
           
+          {/* Email Settings Section */}
           <div className="space-y-4">
-            <div className="relative">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Mail size={20} className="text-indigo-600"/> General Settings
+            </h2>
+            <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
+              <label className="text-sm font-bold text-slate-600 mb-2 block uppercase tracking-wider">Receiver Email</label>
               <input 
-                name="adminEmail"
+                name="adminEmail" 
                 type="email" 
-                defaultValue={settings?.adminEmail || ""}
-                placeholder="admin@yourstore.com" 
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 outline-none focus:ring-2 ring-indigo-100 focus:bg-white transition-all font-medium"
+                defaultValue={settings?.adminEmail} 
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 outline-none focus:ring-2 ring-indigo-100 font-semibold" 
+                placeholder="Type your email here...." 
+                required
               />
+              <p className="text-[12px] text-slate-400 mt-3 flex items-center gap-1 font-medium">
+                Don't miss out! Currently, you can add only one email address for inventory alerts. 
+                <span className="text-blue-600 underline cursor-pointer ml-1">Upgrade your plan</span>
+              </p>
             </div>
-            <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl">
-                <p className="text-[12px] text-amber-700 leading-relaxed font-medium">
-                    ⚠️ Current plan allows 1 admin email. <span className="underline font-bold cursor-pointer">Upgrade to Growth Plan</span> to add up to 5 team members.
-                </p>
+          </div>
+
+          {/* Email Automation Section (The one from your screenshot) */}
+          <div className="space-y-4 pt-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <MessageSquare size={20} className="text-emerald-600"/> Inventory Alert Settings
+            </h2>
+            <div className="bg-white rounded-[2rem] p-4 border border-slate-200 shadow-sm flex items-center justify-between px-8 py-6">
+              <div className="flex-1">
+                <p className="font-bold text-slate-800 italic text-sm">"Update inventory via email?" is available on "Growth" plan.</p>
+              </div>
+              <button type="button" className="bg-black text-white px-6 py-2.5 rounded-full font-black text-[11px] uppercase tracking-widest hover:bg-slate-800 transition-all">
+                UPGRADE NOW
+              </button>
+            </div>
+          </div>
+
+          {/* Subject Line Settings */}
+          <div className="space-y-4 pt-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <ShieldCheck size={20} className="text-purple-600"/> Additional Settings (Optional)
+            </h2>
+            <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm">
+              <label className="text-sm font-bold text-slate-600 mb-2 block uppercase tracking-wider">Email reminder subject line</label>
+              <input 
+                name="subjectLine" 
+                type="text"
+                defaultValue={settings?.subjectLine || "Out of stock products reminder"} 
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 outline-none focus:ring-2 ring-purple-100 font-semibold" 
+              />
+              <p className="text-[12px] text-slate-400 mt-2 italic font-medium">Enter 15–50 characters. Leave blank for default.</p>
             </div>
           </div>
         </div>
 
-        {/* Section 2: Display Preferences */}
-        <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="bg-emerald-50 text-emerald-600 p-2 rounded-lg"><Layout size={20}/></div>
-            <h2 className="text-lg font-bold">Email Content Builder</h2>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <ModernCheckbox label="Show Product Price" name="includePrice" icon="💰" defaultChecked={settings?.includePrice} />
-            <ModernCheckbox label="Display SKU ID" name="includeSku" icon="🆔" defaultChecked={settings?.includeSku ?? true} />
-            <ModernCheckbox label="Show Vendor Name" name="includeVendor" icon="🏢" defaultChecked={settings?.includeVendor ?? true} />
-            <ModernCheckbox label="Include Product Tags" name="includeTags" icon="🏷️" defaultChecked={settings?.includeTags} />
-          </div>
-        </div>
-
-        {/* Section 3: Branding */}
-        <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="bg-purple-50 text-purple-600 p-2 rounded-lg"><ShieldCheck size={20}/></div>
-            <h2 className="text-lg font-bold">Email Branding</h2>
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Custom Subject Line</label>
-            <input 
-              name="subjectLine"
-              type="text" 
-              defaultValue={settings?.subjectLine || "Good news! Your item is back."}
-              className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 outline-none focus:ring-2 ring-purple-100 transition-all"
-            />
+        {/* Right Side: Display Preferences */}
+        <div className="space-y-6">
+          <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl shadow-indigo-100 relative overflow-hidden">
+            <div className="relative z-10">
+              <h2 className="text-lg font-bold mb-8 flex items-center gap-2">
+                <Layout size={20} className="text-indigo-400" /> Email Content Builder
+              </h2>
+              <div className="space-y-6">
+                <ModernToggle label="Include Price" name="includePrice" checked={settings?.includePrice} />
+                <ModernToggle label="Include Tags" name="includeTags" checked={settings?.includeTags} />
+                <ModernToggle label="Include SKU" name="includeSku" checked={settings?.includeSku ?? true} />
+                <ModernToggle label="Include Vendor" name="includeVendor" checked={settings?.includeVendor ?? true} />
+              </div>
+              <div className="mt-12 pt-8 border-t border-white/10 text-center flex flex-col items-center">
+                 <BellRing size={24} className="text-indigo-400 opacity-40 mb-2" />
+                 <p className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black italic">Live Sync Active</p>
+              </div>
+            </div>
           </div>
         </div>
       </Form>
@@ -119,19 +149,14 @@ export default function SettingsPage() {
   );
 }
 
-function ModernCheckbox({ label, name, icon, defaultChecked }) {
+function ModernToggle({ label, name, checked }) {
   return (
-    <label className="relative flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-slate-50/50 cursor-pointer hover:border-indigo-200 hover:bg-white transition-all group">
-      <div className="flex items-center gap-3">
-        <span className="text-lg">{icon}</span>
-        <span className="text-sm font-bold text-slate-600">{label}</span>
+    <label className="flex items-center justify-between group cursor-pointer p-1">
+      <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">{label}</span>
+      <div className="relative inline-flex items-center">
+        <input type="checkbox" name={name} defaultChecked={checked} className="sr-only peer" />
+        <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500"></div>
       </div>
-      <input 
-        type="checkbox" 
-        name={name}
-        defaultChecked={defaultChecked}
-        className="w-5 h-5 rounded-lg border-slate-300 accent-indigo-600"
-      />
     </label>
   );
 }
