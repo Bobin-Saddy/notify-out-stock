@@ -36,9 +36,6 @@ function getPriceDropBadge(oldPrice, newPrice, currency, percentageOff) {
       <p style="margin: 10px 0 0 0; color: #10b981; font-size: 16px; font-weight: bold;">
         Save ${percentageOff}% - Limited Time!
       </p>
-      <p style="margin: 10px 0 0 0; color: #ef4444; font-size: 14px; font-weight: bold;">
-        ⚠️ Still Out of Stock
-      </p>
     </div>
   `;
 }
@@ -71,18 +68,8 @@ export async function action({ request }) {
       const variantId = String(variant.id);
       const inventoryItemId = String(variant.inventory_item_id);
       const currentPrice = parseFloat(variant.price);
-      
-      // Check current inventory quantity
-      const currentQuantity = variant.inventory_quantity || 0;
-      const isOutOfStock = currentQuantity <= 0;
 
-      console.log(`🔍 Variant ${variantId}, Price: ${currentPrice}, Quantity: ${currentQuantity}, Out of Stock: ${isOutOfStock}`);
-
-      // Only process if product is OUT OF STOCK
-      if (!isOutOfStock) {
-        console.log(`⏭️ Skipping variant ${variantId} - Product is in stock (quantity: ${currentQuantity})`);
-        continue;
-      }
+      console.log(`🔍 Variant ${variantId}, Price: ${currentPrice}`);
 
       const subscribers = await prisma.backInStock.findMany({
         where: {
@@ -90,12 +77,11 @@ export async function action({ request }) {
           OR: [
             { inventoryItemId: inventoryItemId },
             { variantId: variantId }
-          ],
-          notified: false // Only get subscribers who haven't been notified for back in stock
+          ]
         }
       });
 
-      console.log(`👥 ${subscribers.length} out-of-stock subscribers found`);
+      console.log(`👥 ${subscribers.length} subscribers found`);
 
       for (const sub of subscribers) {
         const subscribedPrice = sub.subscribedPrice;
@@ -112,7 +98,7 @@ export async function action({ request }) {
         if (currentPrice < subscribedPrice) {
           const percentageOff = Math.round(((subscribedPrice - currentPrice) / subscribedPrice) * 100);
           
-          console.log(`💰 Price drop detected: ${subscribedPrice} → ${currentPrice} (${percentageOff}%)`);
+          console.log(`💰 Price drop: ${subscribedPrice} → ${currentPrice} (${percentageOff}%)`);
 
           if (percentageOff >= (settings.priceDropThreshold || 5)) {
             try {
@@ -121,7 +107,6 @@ export async function action({ request }) {
                   productVariant(id: $id) {
                     displayName
                     price
-                    inventoryQuantity
                     product {
                       title
                       handle
@@ -145,13 +130,6 @@ export async function action({ request }) {
               const variantData = json.data?.productVariant;
               if (!variantData) continue;
 
-              // Double check: Verify product is still out of stock
-              const latestQuantity = variantData.inventoryQuantity || 0;
-              if (latestQuantity > 0) {
-                console.log(`⏭️ Product came back in stock, skipping price drop alert for ${sub.email}`);
-                continue;
-              }
-
               const currency = json.data?.shop?.currencyCode || "USD";
               const shopName = json.data?.shop?.name || shop;
               const productImg = variantData.product.featuredImage?.url || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
@@ -167,7 +145,6 @@ export async function action({ request }) {
                     <tr><td style="padding: 40px; text-align: center;">
                       <h1 style="color: #111827; font-size: 28px; font-weight: 800;">💰 Price Drop Alert!</h1>
                       <p style="color: #6b7280;">Great news! The price just dropped on <strong>${shopName}</strong>.</p>
-                      <p style="color: #ef4444; font-size: 14px;"><strong>Note:</strong> Product is still out of stock, but we wanted you to know about this price change!</p>
                     </td></tr>
                     <tr><td style="padding: 0 40px; text-align: center;">
                       <div style="background-color: #f9fafb; border-radius: 20px; padding: 30px;">
@@ -175,15 +152,12 @@ export async function action({ request }) {
                         <h2 style="color: #111827; margin: 15px 0;">${variantData.product.title}</h2>
                         <p style="color: #6b7280; margin: 10px 0;">${variantData.displayName}</p>
                         ${priceDropBadge}
-                        <a href="${clickUrl}" style="display: inline-block; background-color: #10b981; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 10px;">View Product</a>
-                        <p style="color: #6b7280; font-size: 14px; margin-top: 15px;">
-                          We'll notify you separately when this item is back in stock!
-                        </p>
+                        <a href="${clickUrl}" style="display: inline-block; background-color: #10b981; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 10px;">Shop Now & Save</a>
                       </div>
                     </td></tr>
                     <tr><td style="padding: 30px; text-align: center;">
                       <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                        You're receiving this because you subscribed to alerts for this out-of-stock product
+                        You're receiving this because you subscribed to alerts for this product
                       </p>
                     </td></tr>
                   </table>
@@ -194,13 +168,12 @@ export async function action({ request }) {
               const sent = await sendEmail({
                 from: `${shopName} <onboarding@resend.dev>`,
                 to: sub.email,
-                subject: `💰 Price Drop Alert: ${variantData.product.title} - Save ${percentageOff}% (Still Out of Stock)`,
+                subject: `💰 Price Drop: ${variantData.product.title} - Save ${percentageOff}%!`,
                 html: priceDropHtml
               });
 
               if (sent) {
-                console.log(`✅ Price drop email sent to ${sub.email} (Product still out of stock)`);
-                // Update subscribed price but keep notified as false for back-in-stock alert
+                console.log(`✅ Email sent to ${sub.email}`);
                 await prisma.backInStock.update({
                   where: { id: sub.id },
                   data: { subscribedPrice: currentPrice }
@@ -211,8 +184,6 @@ export async function action({ request }) {
             }
           }
         } else if (currentPrice > subscribedPrice) {
-          // Update price if it increased (but still out of stock)
-          console.log(`📈 Price increased: ${subscribedPrice} → ${currentPrice} (Product still out of stock)`);
           await prisma.backInStock.update({
             where: { id: sub.id },
             data: { subscribedPrice: currentPrice }
