@@ -103,51 +103,84 @@ function getPriceDropBadge(oldPrice, newPrice, currency, percentageOff) {
 }
 
 export async function action({ request }) {
-  const { payload, shop, admin } = await authenticate.webhook(request);
-  const inventoryItemId = String(payload.inventory_item_id);
-  
-  const available = payload.available !== undefined ? Number(payload.available) : 
-                    (payload.available_adjustment !== undefined ? Number(payload.available_adjustment) : null);
-
-  if (available === null) return new Response("No quantity data", { status: 200 });
-
-  const settings = await prisma.appSettings.findUnique({ where: { shop: shop } }) || { 
-    adminEmail: 'digittrix.savita@gmail.com', 
-    subjectLine: 'Out of stock products reminder', 
-    includeSku: true, 
-    includeVendor: true, 
-    includePrice: true,
-    countdownThreshold: 200
-  };
-
-  let APP_URL = process.env.SHOPIFY_APP_URL || "";
-  if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
-
   try {
-    const response = await admin.graphql(`
-      query {
-        inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
+    const { payload, shop, admin } = await authenticate.webhook(request);
+    const inventoryItemId = String(payload.inventory_item_id);
+    
+    console.log("📦 Webhook received:", { inventoryItemId, payload });
+    
+    const available = payload.available !== undefined ? Number(payload.available) : 
+                      (payload.available_adjustment !== undefined ? Number(payload.available_adjustment) : null);
+
+    if (available === null) {
+      console.log("⚠️ No quantity data in payload");
+      return new Response("No quantity data", { status: 200 });
+    }
+
+    const settings = await prisma.appSettings.findUnique({ where: { shop: shop } }) || { 
+      adminEmail: 'digittrix.savita@gmail.com', 
+      subjectLine: 'Out of stock products reminder', 
+      includeSku: true, 
+      includeVendor: true, 
+      includePrice: true,
+      countdownThreshold: 200
+    };
+
+    let APP_URL = process.env.SHOPIFY_APP_URL || "";
+    if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
+
+    // GraphQL query with better error handling
+    const query = `
+      query getInventoryItem($id: ID!) {
+        inventoryItem(id: $id) {
           sku
           variant {
+            id
             displayName
             price
             product {
+              id
               title
               handle
               vendor
-              featuredImage { url }
+              featuredImage {
+                url
+              }
               tags
             }
           }
         }
-        shop { currencyCode name }
+        shop {
+          currencyCode
+          name
+        }
       }
-    `);
+    `;
+
+    console.log("🔍 Querying Shopify GraphQL...");
+    const response = await admin.graphql(query, {
+      variables: {
+        id: `gid://shopify/InventoryItem/${inventoryItemId}`
+      }
+    });
 
     const json = await response.json();
+    
+    // Check for GraphQL errors
+    if (json.errors) {
+      console.error("❌ GraphQL Errors:", JSON.stringify(json.errors, null, 2));
+      return new Response("GraphQL Error", { status: 200 });
+    }
+
     const inv = json.data?.inventoryItem;
     const variant = inv?.variant;
-    if (!variant) return new Response("Variant not found", { status: 200 });
+    
+    if (!variant) {
+      console.log("⚠️ Variant not found for inventory item:", inventoryItemId);
+      return new Response("Variant not found", { status: 200 });
+    }
+
+    console.log("✅ Product found:", variant.product.title);
 
     const currency = json.data?.shop?.currencyCode || "USD";
     const shopName = json.data?.shop?.name;
@@ -156,16 +189,19 @@ export async function action({ request }) {
     const currentPrice = parseFloat(variant.price);
 
     // --- CHECK FOR PRICE DROP ---
-    // Get all subscribers for this product (both notified and unnotified)
     const allSubscribers = await prisma.backInStock.findMany({ 
       where: { inventoryItemId } 
     });
+
+    console.log(`👥 Found ${allSubscribers.length} subscribers for this product`);
 
     // Check if price has dropped for any subscriber
     for (const sub of allSubscribers) {
       if (sub.subscribedPrice && currentPrice < sub.subscribedPrice) {
         const oldPrice = sub.subscribedPrice;
         const percentageOff = Math.round(((oldPrice - currentPrice) / oldPrice) * 100);
+        
+        console.log(`💰 Price drop detected for ${sub.email}: ${oldPrice} → ${currentPrice} (${percentageOff}% off)`);
         
         // Only send if price drop is significant (at least 5%)
         if (percentageOff >= 5) {
@@ -210,11 +246,13 @@ export async function action({ request }) {
           });
           
           if (sent) {
-            // Update the subscribed price to current price so we don't send duplicate alerts
+            console.log(`✅ Price drop email sent to ${sub.email}`);
             await prisma.backInStock.update({ 
               where: { id: sub.id }, 
               data: { subscribedPrice: currentPrice } 
             });
+          } else {
+            console.log(`❌ Failed to send price drop email to ${sub.email}`);
           }
         }
       }
@@ -225,6 +263,8 @@ export async function action({ request }) {
       const subscribers = await prisma.backInStock.findMany({ 
         where: { inventoryItemId, notified: false } 
       });
+
+      console.log(`📧 Sending back-in-stock emails to ${subscribers.length} subscribers`);
 
       for (const sub of subscribers) {
         const currentStock = await getInventoryLevels(admin, inventoryItemId);
@@ -272,29 +312,34 @@ export async function action({ request }) {
         });
         
         if (sent) {
+          console.log(`✅ Back-in-stock email sent to ${sub.email}`);
           await prisma.backInStock.update({ 
             where: { id: sub.id }, 
             data: { 
               notified: true,
-              subscribedPrice: currentPrice // Store current price for future price drop comparison
+              subscribedPrice: currentPrice
             } 
           });
+        } else {
+          console.log(`❌ Failed to send back-in-stock email to ${sub.email}`);
         }
       }
     } 
     
     // --- CASE 2: OUT OF STOCK (Admin Alert) ---
     else if (available <= 0) {
+      console.log("📧 Sending out-of-stock alert to admin");
+      
       const adminHtml = `
         <div style="font-family: sans-serif; padding: 30px; background-color: #fffafb; border: 1px solid #fee2e2; border-radius: 16px; max-width: 500px; margin: 20px auto;">
           <h2 style="color: #991b1b; font-size: 20px;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
           <div style="background-color: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #fecaca; margin-top: 15px;">
             <p style="margin: 8px 0;"><strong>Product:</strong> ${variant.product.title}</p>
             <p style="margin: 8px 0;"><strong>Variant:</strong> ${variant.displayName}</p>
-            ${settings.includeSku ? `<p style="margin: 8px 0;"><strong>SKU:</strong> ${inv.sku}</p>` : ''}
-            ${settings.includeVendor ? `<p style="margin: 8px 0;"><strong>Vendor:</strong> ${variant.product.vendor}</p>` : ''}
+            ${settings.includeSku ? `<p style="margin: 8px 0;"><strong>SKU:</strong> ${inv.sku || 'N/A'}</p>` : ''}
+            ${settings.includeVendor ? `<p style="margin: 8px 0;"><strong>Vendor:</strong> ${variant.product.vendor || 'N/A'}</p>` : ''}
             ${settings.includePrice ? `<p style="margin: 8px 0;"><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
-            ${settings.includeTags ? `<p style="margin: 8px 0;"><strong>Tags:</strong> ${variant.product.tags?.join(", ")}</p>` : ''}
+            ${settings.includeTags ? `<p style="margin: 8px 0;"><strong>Tags:</strong> ${variant.product.tags?.join(", ") || 'N/A'}</p>` : ''}
           </div>
           <div style="margin-top: 25px; text-align: center;">
             <a href="https://${shop}/admin/products" style="background-color: #111827; color: white; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold;">Manage Inventory</a>
@@ -302,17 +347,26 @@ export async function action({ request }) {
         </div>
       `;
 
-      await sendEmail({
+      const sent = await sendEmail({
         from: 'Inventory Manager <onboarding@resend.dev>',
         to: settings.adminEmail,
         subject: `🚨 Stock Out: ${variant.product.title}`,
         html: adminHtml
       });
+      
+      if (sent) {
+        console.log("✅ Admin alert sent");
+      } else {
+        console.log("❌ Failed to send admin alert");
+      }
     }
 
+    console.log("✅ Webhook processed successfully");
     return new Response("OK", { status: 200 });
+    
   } catch (err) {
-    console.error("Webhook Error:", err);
+    console.error("❌ Webhook Error:", err);
+    console.error("Error stack:", err.stack);
     return new Response("Error", { status: 500 });
   }
 }
