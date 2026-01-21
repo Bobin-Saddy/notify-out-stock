@@ -22,13 +22,11 @@ export async function action({ request }) {
   const { payload, shop, admin } = await authenticate.webhook(request);
   const inventoryItemId = String(payload.inventory_item_id);
   
-  // Robust Quantity Check
   const available = payload.available !== undefined ? Number(payload.available) : 
                     (payload.available_adjustment !== undefined ? Number(payload.available_adjustment) : null);
 
   if (available === null) return new Response("No quantity data", { status: 200 });
 
-  // 1. Fetch App Settings
   const settings = await prisma.appSettings.findUnique({ where: { shop: shop } }) || { 
     adminEmail: 'digittrix.savita@gmail.com', 
     subjectLine: 'Out of stock products reminder', 
@@ -42,7 +40,6 @@ export async function action({ request }) {
   if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
 
   try {
-    // 2. Fetch Product & Shop details using GraphQL Variables (fixes the "/" syntax error)
     const response = await admin.graphql(`
       query getProductInfo($id: ID!) {
         inventoryItem(id: $id) {
@@ -74,7 +71,7 @@ export async function action({ request }) {
     const productImg = variant.product.featuredImage?.url || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
     const productUrl = `https://${shop}/products/${variant.product.handle}`;
 
-    // --- CASE 1: BACK IN STOCK (Send to Customers) ---
+    // --- CASE 1: BACK IN STOCK (Customers) ---
     if (available > 0) {
       const subscribers = await prisma.backInStock.findMany({ 
         where: { inventoryItemId, notified: false } 
@@ -83,23 +80,27 @@ export async function action({ request }) {
       for (const sub of subscribers) {
         const openUrl = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        const dynamicStockBadge = `${APP_URL}api/stock-badge?inventoryItemId=${inventoryItemId}&shop=${shop}`;
+        
+        // Ensure this URL is publically accessible
+        const dynamicStockBadge = `${APP_URL}api/stock-badge?inventoryItemId=${inventoryItemId}&shop=${shop}&v=${Date.now()}`;
 
         const customerHtml = `
           <div style="background-color: #f3f4f6; padding: 40px 0; font-family: sans-serif;">
             <table align="center" width="100%" style="max-width: 550px; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px rgba(0,0,0,0.1);">
               <tr><td style="padding: 40px; text-align: center;">
                 <h1 style="color: #111827; font-size: 28px; font-weight: 800;">Back In Stock!</h1>
-                <p>Available now at <strong>${shopName}</strong>.</p>
+                <p style="color: #4b5563;">Available now at <strong>${shopName}</strong>.</p>
+                
                 <div style="margin: 20px 0;">
-                  <img src="${dynamicStockBadge}" alt="Live Stock Status" style="display: block; margin: 0 auto; height: 40px;">
+                  <p style="font-size: 12px; color: #9ca3af; text-transform: uppercase; margin-bottom: 8px;">Live Stock Status</p>
+                  <img src="${dynamicStockBadge}" alt="Live Stock" width="200" style="display: block; margin: 0 auto; border-radius: 6px;">
                 </div>
               </td></tr>
-              <tr><td style="padding: 0 40px; text-align: center;">
-                <div style="background-color: #f9fafb; border-radius: 20px; padding: 30px;">
+              <tr><td style="padding: 0 40px 40px; text-align: center;">
+                <div style="background-color: #f9fafb; border-radius: 20px; padding: 30px; border: 1px solid #e5e7eb;">
                   <img src="${productImg}" style="width: 100%; max-width: 250px; border-radius: 12px; margin-bottom: 20px;">
-                  <h2>${variant.product.title}</h2>
-                  ${settings.includePrice ? `<p style="font-size: 24px; font-weight: 900; color: #4f46e5;">${currency} ${variant.price}</p>` : ''}
+                  <h2 style="color: #111827; margin: 0 0 10px 0;">${variant.product.title}</h2>
+                  ${settings.includePrice ? `<p style="font-size: 24px; font-weight: 900; color: #4f46e5; margin: 0 0 20px 0;">${currency} ${variant.price}</p>` : ''}
                   <a href="${clickUrl}" style="display: inline-block; background-color: #111827; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold;">Buy Now</a>
                 </div>
               </td></tr>
@@ -125,12 +126,12 @@ export async function action({ request }) {
         <div style="font-family: sans-serif; padding: 30px; background-color: #fffafb; border: 1px solid #fee2e2; border-radius: 16px; max-width: 500px; margin: 20px auto;">
           <h2 style="color: #991b1b; font-size: 20px;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
           <div style="background-color: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #fecaca; margin-top: 15px;">
-            <p><strong>Product:</strong> ${variant.product.title}</p>
-            <p><strong>Variant:</strong> ${variant.displayName}</p>
-            ${settings.includeSku ? `<p><strong>SKU:</strong> ${inv.sku}</p>` : ''}
-            ${settings.includeVendor ? `<p><strong>Vendor:</strong> ${variant.product.vendor}</p>` : ''}
-            ${settings.includePrice ? `<p><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
-            ${settings.includeTags ? `<p><strong>Tags:</strong> ${variant.product.tags?.join(", ")}</p>` : ''}
+            <p style="margin: 5px 0;"><strong>Product:</strong> ${variant.product.title}</p>
+            <p style="margin: 5px 0;"><strong>Variant:</strong> ${variant.displayName}</p>
+            ${settings.includeSku ? `<p style="margin: 5px 0;"><strong>SKU:</strong> ${inv.sku}</p>` : ''}
+            ${settings.includeVendor ? `<p style="margin: 5px 0;"><strong>Vendor:</strong> ${variant.product.vendor}</p>` : ''}
+            ${settings.includePrice ? `<p style="margin: 5px 0;"><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
+            ${settings.includeTags ? `<p style="margin: 5px 0;"><strong>Tags:</strong> ${variant.product.tags?.join(", ")}</p>` : ''}
           </div>
           <div style="margin-top: 25px; text-align: center;">
             <a href="https://${shop}/admin/products" style="background-color: #111827; color: white; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold;">Manage Inventory</a>
