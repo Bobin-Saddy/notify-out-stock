@@ -5,7 +5,7 @@ export async function loader({ request }) {
   const inventoryItemId = url.searchParams.get("inventoryItemId");
   const shop = url.searchParams.get("shop");
 
-  if (!inventoryItemId || !shop) return new Response("Params Error", { status: 400 });
+  if (!inventoryItemId || !shop) return new Response("Missing parameters", { status: 400 });
 
   try {
     const { admin } = await unauthenticated.admin(shop);
@@ -22,7 +22,7 @@ export async function loader({ request }) {
     const resJson = await response.json();
     const stock = resJson.data?.inventoryItem?.inventoryLevels?.nodes?.[0]?.quantities?.[0]?.quantity ?? 0;
 
-    const color = stock < 10 ? "#ef4444" : "#22c55e"; // Red if low, Green if okay
+    const color = stock < 10 ? "#ef4444" : "#22c55e"; 
     const text = stock > 0 ? `ONLY ${stock} LEFT!` : "OUT OF STOCK";
 
     const svg = `

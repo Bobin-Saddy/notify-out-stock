@@ -70,7 +70,7 @@ export async function action({ request }) {
     const productImg = variant.product.featuredImage?.url || "";
     const productUrl = `https://${shop}/products/${variant.product.handle}`;
 
-    // --- CASE 1: BACK IN STOCK (Customers) ---
+    // --- CASE 1: BACK IN STOCK (Send to Customers) ---
     if (available > 0) {
       const subscribers = await prisma.backInStock.findMany({ 
         where: { inventoryItemId, notified: false } 
@@ -78,25 +78,24 @@ export async function action({ request }) {
 
       for (const sub of subscribers) {
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        // Live Badge URL
         const dynamicStockBadge = `${APP_URL}api/stock-badge?inventoryItemId=${inventoryItemId}&shop=${shop}&v=${Date.now()}`;
 
         const customerHtml = `
-          <div style="background-color: #f9fafb; padding: 50px 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; text-align: center;">
-            <table align="center" width="100%" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; border: 1px solid #f1f5f9; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+          <div style="background-color: #f9fafb; padding: 50px 0; font-family: sans-serif; text-align: center;">
+            <table align="center" width="100%" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb;">
               <tr><td style="padding: 40px;">
-                <h1 style="color: #1e293b; font-size: 24px; margin-bottom: 8px;">Good News!</h1>
-                <p style="color: #64748b; font-size: 16px;">It's back in stock at <strong>${shopName}</strong>.</p>
+                <h1 style="color: #111827; font-size: 24px;">Good News!</h1>
+                <p style="color: #4b5563;">It's back in stock at <strong>${shopName}</strong>.</p>
                 
-                <div style="margin: 24px 0;">
-                  <img src="${dynamicStockBadge}" alt="Live Stock Status" width="180" height="35" style="display: block; margin: 0 auto; border: 0; outline: none;">
+                <div style="margin: 25px 0;">
+                  <img src="${dynamicStockBadge}" alt="Live Stock Status" width="180" height="35" style="display: block; margin: 0 auto;">
                 </div>
 
-                <div style="padding: 24px; background-color: #f8fafc; border-radius: 12px; margin-top: 20px;">
+                <div style="padding: 24px; background-color: #f8fafc; border-radius: 12px;">
                   <img src="${productImg}" width="150" style="border-radius: 8px; margin-bottom: 16px;">
-                  <h2 style="font-size: 18px; color: #0f172a; margin: 0 0 8px 0;">${variant.product.title}</h2>
-                  ${settings.includePrice ? `<p style="font-size: 20px; font-weight: bold; color: #6366f1; margin-bottom: 20px;">${currency} ${variant.price}</p>` : ''}
-                  <a href="${clickUrl}" style="background-color: #0f172a; color: #ffffff; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Shop Now</a>
+                  <h2 style="font-size: 18px; color: #111827;">${variant.product.title}</h2>
+                  ${settings.includePrice ? `<p style="font-size: 20px; font-weight: bold; color: #4f46e5;">${currency} ${variant.price}</p>` : ''}
+                  <a href="${clickUrl}" style="background-color: #111827; color: #ffffff; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">Shop Now</a>
                 </div>
               </td></tr>
             </table>
@@ -113,12 +112,11 @@ export async function action({ request }) {
       }
     } 
     
-    // --- CASE 2: OUT OF STOCK (Admin Alert) ---
+    // --- CASE 2: OUT OF STOCK (Send to Admin) ---
     else if (available <= 0) {
       const adminHtml = `
-        <div style="font-family: Arial, sans-serif; padding: 25px; border: 1px solid #fee2e2; background-color: #fef2f2; border-radius: 12px; max-width: 500px;">
-          <h2 style="color: #991b1b; margin-top: 0;">🚨 Out of Stock Alert</h2>
-          <p style="color: #450a0a;">The following item has run out of inventory:</p>
+        <div style="font-family: sans-serif; padding: 25px; border: 1px solid #fee2e2; background-color: #fef2f2; border-radius: 12px; max-width: 500px;">
+          <h2 style="color: #991b1b; margin-top: 0;">🚨 ${settings.subjectLine}</h2>
           <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #fecaca;">
             <p><strong>Product:</strong> ${variant.product.title}</p>
             <p><strong>Variant:</strong> ${variant.displayName}</p>
