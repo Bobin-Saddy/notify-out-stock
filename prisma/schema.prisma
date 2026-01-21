@@ -62,6 +62,7 @@ model BackInStock {
   opened          Boolean  @default(false)
   clicked         Boolean  @default(false)
   purchased       Boolean  @default(false)
+  priceAtSubscription String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
 }
@@ -77,4 +78,8 @@ model AppSettings {
   includeTags  Boolean  @default(false)
   updateViaEmail   Boolean  @default(false) // Naya feature toggle
   updatedAt    DateTime @updatedAt
+  countdownThreshold    Int     @default(200)
+  emailLimitPerRestock  Int     @default(100)
+  enablePriceDropAlerts Boolean @default(true)   // ADD THIS
+  priceDropThreshold    Int     @default(5)      // ADD THIS - minimum % drop
 }
