@@ -22,26 +22,30 @@ export async function action({ request }) {
   const { payload, shop, admin } = await authenticate.webhook(request);
   const inventoryItemId = String(payload.inventory_item_id);
   
+  // Robust Quantity Check
   const available = payload.available !== undefined ? Number(payload.available) : 
                     (payload.available_adjustment !== undefined ? Number(payload.available_adjustment) : null);
 
   if (available === null) return new Response("No quantity data", { status: 200 });
 
+  // 1. Fetch App Settings
   const settings = await prisma.appSettings.findUnique({ where: { shop: shop } }) || { 
     adminEmail: 'digittrix.savita@gmail.com', 
     subjectLine: 'Out of stock products reminder', 
     includeSku: true, 
     includeVendor: true, 
-    includePrice: true 
+    includePrice: true,
+    includeTags: true
   };
 
   let APP_URL = process.env.SHOPIFY_APP_URL || "";
   if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
 
   try {
+    // 2. Fetch Product & Shop details using GraphQL Variables (fixes the "/" syntax error)
     const response = await admin.graphql(`
-      query {
-        inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
+      query getProductInfo($id: ID!) {
+        inventoryItem(id: $id) {
           sku
           variant {
             displayName
@@ -57,11 +61,12 @@ export async function action({ request }) {
         }
         shop { currencyCode name }
       }
-    `);
+    `, { variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` } });
 
     const json = await response.json();
     const inv = json.data?.inventoryItem;
     const variant = inv?.variant;
+    
     if (!variant) return new Response("Variant not found", { status: 200 });
 
     const currency = json.data?.shop?.currencyCode || "USD";
@@ -69,7 +74,7 @@ export async function action({ request }) {
     const productImg = variant.product.featuredImage?.url || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
     const productUrl = `https://${shop}/products/${variant.product.handle}`;
 
-    // --- CASE 1: BACK IN STOCK ---
+    // --- CASE 1: BACK IN STOCK (Send to Customers) ---
     if (available > 0) {
       const subscribers = await prisma.backInStock.findMany({ 
         where: { inventoryItemId, notified: false } 
@@ -78,24 +83,18 @@ export async function action({ request }) {
       for (const sub of subscribers) {
         const openUrl = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        
-        // --- DYNAMIC INVENTORY IMAGE URL ---
-        // This hits your server every time the email is opened
         const dynamicStockBadge = `${APP_URL}api/stock-badge?inventoryItemId=${inventoryItemId}&shop=${shop}`;
 
         const customerHtml = `
           <div style="background-color: #f3f4f6; padding: 40px 0; font-family: sans-serif;">
             <table align="center" width="100%" style="max-width: 550px; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 15px rgba(0,0,0,0.1);">
               <tr><td style="padding: 40px; text-align: center;">
-                <h1 style="color: #111827; font-size: 28px; font-weight: 800; margin-bottom: 10px;">Back In Stock!</h1>
+                <h1 style="color: #111827; font-size: 28px; font-weight: 800;">Back In Stock!</h1>
                 <p>Available now at <strong>${shopName}</strong>.</p>
-                
                 <div style="margin: 20px 0;">
-                  <img src="${dynamicStockBadge}" alt="Checking live stock..." style="display: block; margin: 0 auto; height: 45px;">
-                  <p style="font-size: 11px; color: #9ca3af; margin-top: 5px;">*Updates live on every open</p>
+                  <img src="${dynamicStockBadge}" alt="Live Stock Status" style="display: block; margin: 0 auto; height: 40px;">
                 </div>
               </td></tr>
-              
               <tr><td style="padding: 0 40px; text-align: center;">
                 <div style="background-color: #f9fafb; border-radius: 20px; padding: 30px;">
                   <img src="${productImg}" style="width: 100%; max-width: 250px; border-radius: 12px; margin-bottom: 20px;">
@@ -115,6 +114,7 @@ export async function action({ request }) {
           subject: `🎉 Back in Stock: ${variant.product.title}`,
           html: customerHtml
         });
+
         if (sent) await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
       }
     } 
