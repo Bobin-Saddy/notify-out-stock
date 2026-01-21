@@ -56,7 +56,7 @@ async function getInventoryLevels(admin, inventoryItemId, locationId = null) {
 }
 
 // Generate countdown badge HTML
-function getCountdownBadge(quantity, threshold = 10) {
+function getCountdownBadge(quantity, threshold = 200) {
   if (quantity === null || quantity > threshold) return '';
   
   const color = quantity <= 3 ? '#dc2626' : quantity <= 7 ? '#f59e0b' : '#10b981';
@@ -94,7 +94,7 @@ export async function action({ request }) {
     includeSku: true, 
     includeVendor: true, 
     includePrice: true,
-    countdownThreshold: 10 // Show countdown when stock is below this
+    countdownThreshold: 200 // Show countdown when stock is below this
   };
 
   let APP_URL = process.env.SHOPIFY_APP_URL || "";
@@ -146,7 +146,7 @@ export async function action({ request }) {
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
         
         // Generate countdown badge
-        const countdownBadge = getCountdownBadge(stockQuantity, settings.countdownThreshold || 10);
+        const countdownBadge = getCountdownBadge(stockQuantity, settings.countdownThreshold || 200);
 
         const customerHtml = `
           <div style="background-color: #f3f4f6; padding: 40px 0; font-family: sans-serif;">
