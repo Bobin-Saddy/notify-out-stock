@@ -45,12 +45,12 @@ async function getInventoryLevels(admin, inventoryItemId, locationId = null) {
     const json = await response.json();
     
     if (locationId) {
-      return json.data?.inventoryItem?.inventoryLevel?.available || 0;
+      return json.data?.inventoryItem?.inventoryLevel?.available ?? 0;
     } else {
-      return json.data?.inventoryItem?.inventoryLevels?.edges?.[0]?.node?.available || 0;
+      return json.data?.inventoryItem?.inventoryLevels?.edges?.[0]?.node?.available ?? 0;
     }
   } catch (err) {
-    console.error("Error fetching inventory:", err);
+    console.error("Error fetching inventory levels:", err);
     return null;
   }
 }
@@ -106,7 +106,10 @@ function getPriceDropBadge(oldPrice, newPrice, currency, discountPercent) {
 
 export async function action({ request }) {
   const { payload, shop, admin } = await authenticate.webhook(request);
-  const inventoryItemId = String(payload.inventory_item_id);
+  
+  // Ensure we extract the ID correctly from the Shopify payload
+  const rawId = payload.inventory_item_id;
+  const inventoryItemId = String(rawId).replace("gid://shopify/InventoryItem/", "");
   
   const available = payload.available !== undefined ? Number(payload.available) : 
                     (payload.available_adjustment !== undefined ? Number(payload.available_adjustment) : null);
@@ -119,10 +122,11 @@ export async function action({ request }) {
     includeSku: true, 
     includeVendor: true, 
     includePrice: true,
+    includeTags: true,
     countdownThreshold: 200,
     emailLimitPerRestock: 100,
     enablePriceDropAlerts: true,
-    priceDropThreshold: 5 // Minimum % drop to trigger alert
+    priceDropThreshold: 5 
   };
 
   let APP_URL = process.env.SHOPIFY_APP_URL || "";
@@ -130,8 +134,8 @@ export async function action({ request }) {
 
   try {
     const response = await admin.graphql(`
-      query {
-        inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
+      query getProductInfo($id: ID!) {
+        inventoryItem(id: $id) {
           sku
           variant {
             displayName
@@ -146,14 +150,32 @@ export async function action({ request }) {
             }
           }
         }
-        shop { currencyCode name }
+        shop { 
+          id
+          currencyCode 
+          name 
+        }
       }
-    `);
+    `, {
+      variables: {
+        id: `gid://shopify/InventoryItem/${inventoryItemId}`
+      }
+    });
 
     const json = await response.json();
+    
+    // Handle GraphQL Errors explicitly
+    if (json.errors) {
+      console.error("GraphQL Errors:", JSON.stringify(json.errors, null, 2));
+      return new Response("GraphQL Error", { status: 200 });
+    }
+
     const inv = json.data?.inventoryItem;
     const variant = inv?.variant;
-    if (!variant) return new Response("Variant not found", { status: 200 });
+    if (!variant) {
+      console.error("Variant not found for ID:", inventoryItemId);
+      return new Response("Variant not found", { status: 200 });
+    }
 
     const currency = json.data?.shop?.currencyCode || "USD";
     const shopName = json.data?.shop?.name;
@@ -164,27 +186,24 @@ export async function action({ request }) {
     // --- CASE 1: BACK IN STOCK ---
     if (available > 0) {
       const subscribers = await prisma.backInStock.findMany({ 
-        where: { inventoryItemId, notified: false },
+        where: { inventoryItemId: String(inventoryItemId), notified: false },
         orderBy: { createdAt: 'asc' }
       });
 
-      // Apply email limit
+      if (subscribers.length === 0) return new Response("No subscribers to notify", { status: 200 });
+
       const emailLimit = settings.emailLimitPerRestock || 100;
       const subscribersToNotify = subscribers.slice(0, emailLimit);
       const skippedCount = subscribers.length - subscribersToNotify.length;
-
-      console.log(`Restock Alert: ${subscribersToNotify.length} emails to send, ${skippedCount} deferred`);
 
       let successCount = 0;
       let failCount = 0;
       let priceDropCount = 0;
 
       for (const sub of subscribersToNotify) {
-        // Get current inventory level
         const currentStock = await getInventoryLevels(admin, inventoryItemId);
         const stockQuantity = currentStock !== null ? currentStock : available;
         
-        // Check for price drop
         const subscribedPrice = sub.priceAtSubscription ? parseFloat(sub.priceAtSubscription) : null;
         let hasPriceDrop = false;
         let discountPercent = 0;
@@ -198,11 +217,9 @@ export async function action({ request }) {
         const openUrl = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
         
-        // Generate badges
         const countdownBadge = getCountdownBadge(stockQuantity, settings.countdownThreshold || 200);
         const priceDropBadge = hasPriceDrop ? getPriceDropBadge(subscribedPrice, currentPrice, currency, discountPercent) : '';
 
-        // Determine email theme based on alerts
         const isComboAlert = hasPriceDrop && stockQuantity <= (settings.countdownThreshold || 200);
         const headerText = isComboAlert ? '🎉🔥 Back In Stock + Price Drop!' : 
                           hasPriceDrop ? '🔥 Back In Stock at Lower Price!' : 
@@ -215,52 +232,29 @@ export async function action({ request }) {
               <tr><td style="padding: 40px; text-align: center; background: ${isComboAlert ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)' : '#ffffff'};">
                 <h1 style="color: ${headerColor}; font-size: 28px; font-weight: 800; margin: 0;">${headerText}</h1>
                 <p style="color: #6b7280; margin: 10px 0;">Available now at <strong>${shopName}</strong>.</p>
-                ${isComboAlert ? '<p style="color: #dc2626; font-weight: 700; margin: 5px 0;">⚡ Limited stock at discounted price!</p>' : ''}
               </td></tr>
               <tr><td style="padding: 0 40px; text-align: center;">
                 <div style="background-color: #f9fafb; border-radius: 20px; padding: 30px;">
                   <img src="${productImg}" style="width: 100%; max-width: 250px; border-radius: 12px; margin-bottom: 20px;" alt="${variant.product.title}">
                   <h2 style="color: #111827; margin: 15px 0;">${variant.product.title}</h2>
                   <p style="color: #6b7280; margin: 10px 0;">${variant.displayName}</p>
-                  
                   ${priceDropBadge}
-                  
                   ${!hasPriceDrop && settings.includePrice ? `<p style="font-size: 24px; font-weight: 900; color: #4f46e5; margin: 15px 0;">${currency} ${variant.price}</p>` : ''}
-                  
                   ${countdownBadge}
-                  
-                  <a href="${clickUrl}" style="display: inline-block; background-color: ${hasPriceDrop ? '#dc2626' : '#111827'}; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                  <a href="${clickUrl}" style="display: inline-block; background-color: ${hasPriceDrop ? '#dc2626' : '#111827'}; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 10px;">
                     ${isComboAlert ? '🔥 Grab This Deal Now!' : 'Buy Now'}
                   </a>
-                  
-                  ${isComboAlert ? `
-                    <p style="color: #dc2626; font-size: 12px; margin-top: 15px; font-weight: 600;">
-                      ⚠️ This deal won't last long - Limited quantity available!
-                    </p>
-                  ` : ''}
                 </div>
               </td></tr>
               <tr><td style="padding: 30px; text-align: center;">
-                <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                  You're receiving this because you subscribed to back-in-stock${hasPriceDrop ? ' and price drop' : ''} alerts
-                </p>
+                <p style="color: #9ca3af; font-size: 12px; margin: 0;">You're receiving this because you subscribed to alerts.</p>
               </td></tr>
             </table>
             <img src="${openUrl}" width="1" height="1" style="display:none;" alt="" />
           </div>
         `;
 
-        // Dynamic subject line
-        let subjectLine = '';
-        if (isComboAlert) {
-          subjectLine = `🔥 DEAL ALERT: ${variant.product.title} - Back in Stock + ${discountPercent}% OFF!`;
-        } else if (hasPriceDrop) {
-          subjectLine = `🔥 Price Drop: ${variant.product.title} - Now ${discountPercent}% OFF!`;
-        } else if (stockQuantity <= 5) {
-          subjectLine = `🎉 Back in Stock: ${variant.product.title} - Limited Quantity!`;
-        } else {
-          subjectLine = `🎉 Back in Stock: ${variant.product.title}`;
-        }
+        let subjectLine = isComboAlert ? `🔥 DEAL: ${variant.product.title} - ${discountPercent}% OFF!` : `🎉 Back in Stock: ${variant.product.title}`;
 
         const sent = await sendEmail({
           from: `${shopName} <onboarding@resend.dev>`,
@@ -270,112 +264,41 @@ export async function action({ request }) {
         });
         
         if (sent) {
-          await prisma.backInStock.update({ 
-            where: { id: sub.id }, 
-            data: { 
-              notified: true,
-              notifiedAt: new Date()
-            } 
-          });
+          await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true, notifiedAt: new Date() } });
           successCount++;
         } else {
           failCount++;
         }
-
-        // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      // Send admin summary
-      if (subscribers.length > 0) {
-        const adminSummaryHtml = `
-          <div style="font-family: sans-serif; padding: 30px; background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 16px; max-width: 550px; margin: 20px auto;">
-            <h2 style="color: #166534; font-size: 22px; margin: 0;">✅ Back-in-Stock Notifications Sent</h2>
-            ${priceDropCount > 0 ? `<p style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); color: #991b1b; padding: 10px; border-radius: 8px; font-weight: 700; margin: 15px 0;">🔥 ${priceDropCount} combo alerts sent (price drop + restock)</p>` : ''}
-            
-            <div style="background-color: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #bbf7d0; margin-top: 15px;">
-              <p style="margin: 8px 0;"><strong>Product:</strong> ${variant.product.title}</p>
-              <p style="margin: 8px 0;"><strong>Variant:</strong> ${variant.displayName}</p>
-              <p style="margin: 8px 0;"><strong>Current Stock:</strong> ${available} units</p>
-              <p style="margin: 8px 0;"><strong>Current Price:</strong> ${currency} ${currentPrice}</p>
-              ${variant.compareAtPrice ? `<p style="margin: 8px 0; color: #dc2626;"><strong>Compare At Price:</strong> ${currency} ${variant.compareAtPrice}</p>` : ''}
-              
-              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 15px 0;">
-              
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
-                <div style="background-color: #f0fdf4; padding: 12px; border-radius: 8px; text-align: center;">
-                  <p style="margin: 0; font-size: 24px; font-weight: 900; color: #166534;">${successCount}</p>
-                  <p style="margin: 5px 0 0 0; font-size: 12px; color: #6b7280;">Emails Sent</p>
-                </div>
-                <div style="background-color: ${priceDropCount > 0 ? '#fef2f2' : '#f9fafb'}; padding: 12px; border-radius: 8px; text-align: center;">
-                  <p style="margin: 0; font-size: 24px; font-weight: 900; color: ${priceDropCount > 0 ? '#dc2626' : '#6b7280'};">${priceDropCount}</p>
-                  <p style="margin: 5px 0 0 0; font-size: 12px; color: #6b7280;">Price Drop Alerts</p>
-                </div>
-              </div>
-              
-              ${failCount > 0 ? `<p style="margin: 10px 0 0 0; color: #dc2626;"><strong>❌ Failed:</strong> ${failCount}</p>` : ''}
-              ${skippedCount > 0 ? `<p style="margin: 8px 0; color: #f59e0b; background-color: #fef3c7; padding: 10px; border-radius: 8px;"><strong>⏳ Deferred:</strong> ${skippedCount} subscribers (will be notified on next restock)</p>` : ''}
-              
-              <p style="margin: 10px 0 0 0; font-size: 12px; color: #6b7280;">
-                📊 Total Subscribers: ${subscribers.length} | Email Limit: ${emailLimit}
-              </p>
-            </div>
-            
-            <div style="margin-top: 25px; text-align: center;">
-              <a href="https://${shop}/admin/products" style="background-color: #166534; color: white; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold;">View Product</a>
-            </div>
-          </div>
-        `;
-
+      // Admin Summary Email logic
+      if (successCount > 0) {
+        const adminSummaryHtml = `<div style="font-family: sans-serif; padding: 20px;"><h2>Notifications Sent</h2><p>Product: ${variant.product.title}</p><p>Sent: ${successCount}</p></div>`;
         await sendEmail({
           from: 'Inventory Manager <onboarding@resend.dev>',
           to: settings.adminEmail,
-          subject: `✅ ${successCount} notifications sent${priceDropCount > 0 ? ` (${priceDropCount} with price drops)` : ''} - ${variant.product.title}`,
+          subject: `✅ Notifications Sent - ${variant.product.title}`,
           html: adminSummaryHtml
         });
       }
 
-      return new Response(JSON.stringify({ 
-        success: true, 
-        sent: successCount, 
-        failed: failCount,
-        priceDropAlerts: priceDropCount,
-        deferred: skippedCount,
-        total: subscribers.length 
-      }), { 
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return new Response(JSON.stringify({ success: true, sent: successCount }), { status: 200 });
     } 
     
-    // --- CASE 2: OUT OF STOCK (Admin Alert) ---
-    else if (available <= 0) {
+    // --- CASE 2: OUT OF STOCK ---
+    else {
       const pendingSubscribers = await prisma.backInStock.count({
-        where: { inventoryItemId, notified: false }
+        where: { inventoryItemId: String(inventoryItemId), notified: false }
       });
 
       const adminHtml = `
         <div style="font-family: sans-serif; padding: 30px; background-color: #fffafb; border: 1px solid #fee2e2; border-radius: 16px; max-width: 500px; margin: 20px auto;">
           <h2 style="color: #991b1b; font-size: 20px; margin: 0;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
           <div style="background-color: #ffffff; border-radius: 12px; padding: 20px; border: 1px solid #fecaca; margin-top: 15px;">
-            <p style="margin: 8px 0;"><strong>Product:</strong> ${variant.product.title}</p>
-            <p style="margin: 8px 0;"><strong>Variant:</strong> ${variant.displayName}</p>
-            ${settings.includeSku ? `<p style="margin: 8px 0;"><strong>SKU:</strong> ${inv.sku}</p>` : ''}
-            ${settings.includeVendor ? `<p style="margin: 8px 0;"><strong>Vendor:</strong> ${variant.product.vendor}</p>` : ''}
-            ${settings.includePrice ? `<p style="margin: 8px 0;"><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
-            ${settings.includeTags ? `<p style="margin: 8px 0;"><strong>Tags:</strong> ${variant.product.tags?.join(", ")}</p>` : ''}
-            <hr style="border: none; border-top: 1px solid #fecaca; margin: 15px 0;">
-            ${pendingSubscribers > 0 ? `
-              <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 15px; border-radius: 8px; border: 2px solid #fbbf24; text-align: center;">
-                <p style="margin: 0; font-size: 28px; font-weight: 900; color: #92400e;">${pendingSubscribers}</p>
-                <p style="margin: 5px 0 0 0; color: #92400e; font-weight: 600;">
-                  customer${pendingSubscribers > 1 ? 's' : ''} waiting for restock
-                </p>
-              </div>
-            ` : ''}
-          </div>
-          <div style="margin-top: 25px; text-align: center;">
-            <a href="https://${shop}/admin/products" style="background-color: #111827; color: white; padding: 12px 25px; border-radius: 10px; text-decoration: none; font-weight: bold;">Manage Inventory</a>
+            <p><strong>Product:</strong> ${variant.product.title}</p>
+            <p><strong>Variant:</strong> ${variant.displayName}</p>
+            <p><strong>Waiting:</strong> ${pendingSubscribers} customers</p>
           </div>
         </div>
       `;
@@ -383,14 +306,14 @@ export async function action({ request }) {
       await sendEmail({
         from: 'Inventory Manager <onboarding@resend.dev>',
         to: settings.adminEmail,
-        subject: `🚨 Stock Out: ${variant.product.title}${pendingSubscribers > 0 ? ` (${pendingSubscribers} waiting)` : ''}`,
+        subject: `🚨 Stock Out: ${variant.product.title}`,
         html: adminHtml
       });
     }
 
     return new Response("OK", { status: 200 });
   } catch (err) {
-    console.error("Webhook Error:", err);
-    return new Response("Error", { status: 500 });
+    console.error("Webhook Error Catch:", err);
+    return new Response("Error", { status: 200 }); // Return 200 to prevent Shopify from retrying failing webhooks indefinitely
   }
 }
