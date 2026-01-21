@@ -66,6 +66,8 @@ model BackInStock {
   subscribedPrice Float?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
+  @@index([shop, inventoryItemId])
+  @@index([shop, variantId])
 }
 
 model AppSettings {
