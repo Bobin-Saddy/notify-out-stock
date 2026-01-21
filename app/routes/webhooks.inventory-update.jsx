@@ -90,7 +90,9 @@ export async function action({ request }) {
             product {
               title
               handle
+              vendor
               featuredImage { url }
+              tags
             }
           }
         }
@@ -99,7 +101,8 @@ export async function action({ request }) {
     `);
 
     const json = await response.json();
-    const variant = json.data?.inventoryItem?.variant;
+    const inv = json.data?.inventoryItem;
+    const variant = inv?.variant;
     if (!variant) return new Response("Variant not found", { status: 200 });
 
     const currentPrice = parseFloat(variant.price);
@@ -108,7 +111,7 @@ export async function action({ request }) {
     const productImg = variant.product.featuredImage?.url || "";
     const productUrl = `https://${shop}/products/${variant.product.handle}`;
 
-    // CASE 1: STOCK IS BACK
+    // CASE 1: STOCK IS BACK (Check for both Stock & Price Drop)
     if (available > 0) {
       const subscribers = await prisma.backInStock.findMany({ 
         where: { inventoryItemId, notified: false } 
@@ -116,12 +119,14 @@ export async function action({ request }) {
 
       for (const sub of subscribers) {
         const stockQuantity = (await getInventoryLevels(admin, inventoryItemId)) ?? available;
-        const isPriceDrop = sub.priceAtSubscription && (currentPrice < parseFloat(sub.priceAtSubscription));
+        
+        // Price Drop Logic
+        const oldPrice = sub.priceAtSubscription ? parseFloat(sub.priceAtSubscription) : null;
+        const isPriceDrop = oldPrice && (currentPrice < oldPrice);
 
         const openUrl = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
         
-        // Dynamic HTML Content
         const customerHtml = `
           <div style="background-color: #f9fafb; padding: 20px; font-family: sans-serif;">
             <table align="center" width="100%" style="max-width: 500px; background: white; border-radius: 15px; border: 1px solid #e5e7eb;">
@@ -135,7 +140,7 @@ export async function action({ request }) {
                 
                 <div style="margin: 15px 0;">
                   <span style="font-size: 24px; font-weight: bold; color: #4f46e5;">${currency} ${currentPrice}</span>
-                  ${isPriceDrop ? `<span style="text-decoration: line-through; color: #9ca3af; margin-left: 10px;">${currency} ${sub.priceAtSubscription}</span>` : ''}
+                  ${isPriceDrop ? `<span style="text-decoration: line-through; color: #9ca3af; margin-left: 10px; font-size: 16px;">${currency} ${sub.priceAtSubscription}</span>` : ''}
                 </div>
 
                 ${getCountdownBadge(stockQuantity, settings.countdownThreshold)}
@@ -162,16 +167,31 @@ export async function action({ request }) {
     
     // CASE 2: OUT OF STOCK (Admin Alert)
     else if (available <= 0) {
+      const adminHtml = `
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #fee2e2; background: #fffafb; border-radius: 10px; max-width: 500px; margin: auto;">
+          <h2 style="color: #991b1b; font-size: 18px;">🚨 Inventory Alert</h2>
+          <hr style="border: 0; border-top: 1px solid #fee2e2;">
+          <p><strong>Product:</strong> ${variant.product.title}</p>
+          <p><strong>Variant:</strong> ${variant.displayName}</p>
+          ${settings.includeSku ? `<p><strong>SKU:</strong> ${inv.sku}</p>` : ''}
+          <p><strong>Status:</strong> Out of Stock</p>
+          <div style="text-align: center; margin-top: 20px;">
+            <a href="https://${shop}/admin/products" style="background: #111827; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Manage Inventory</a>
+          </div>
+        </div>
+      `;
+
       await sendEmail({
         from: 'Inventory Manager <onboarding@resend.dev>',
         to: settings.adminEmail,
         subject: `🚨 Stock Out: ${variant.product.title}`,
-        html: `<h3>${variant.product.title} is now out of stock.</h3><p>Variant: ${variant.displayName}</p>`
+        html: adminHtml
       });
     }
 
     return new Response("OK", { status: 200 });
   } catch (err) {
+    console.error("Webhook error:", err);
     return new Response("Error", { status: 500 });
   }
 }
