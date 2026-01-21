@@ -36,7 +36,6 @@ export async function action({ request }) {
     includeTags: true
   };
 
-  // NGROK ya Production URL check karein
   let APP_URL = process.env.SHOPIFY_APP_URL || "";
   if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
 
@@ -64,12 +63,11 @@ export async function action({ request }) {
     const json = await response.json();
     const inv = json.data?.inventoryItem;
     const variant = inv?.variant;
-    
     if (!variant) return new Response("Variant not found", { status: 200 });
 
     const currency = json.data?.shop?.currencyCode || "USD";
     const shopName = json.data?.shop?.name;
-    const productImg = variant.product.featuredImage?.url || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
+    const productImg = variant.product.featuredImage?.url || "";
     const productUrl = `https://${shop}/products/${variant.product.handle}`;
 
     // --- CASE 1: BACK IN STOCK (Customers) ---
@@ -79,55 +77,57 @@ export async function action({ request }) {
       });
 
       for (const sub of subscribers) {
-        const openUrl = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        
-        // Dynamic Badge URL with Cache Buster
-        const dynamicStockBadge = `${APP_URL}api/stock-badge?inventoryItemId=${inventoryItemId}&shop=${shop}&t=${Date.now()}`;
+        // Live Badge URL
+        const dynamicStockBadge = `${APP_URL}api/stock-badge?inventoryItemId=${inventoryItemId}&shop=${shop}&v=${Date.now()}`;
 
         const customerHtml = `
-          <div style="background-color: #f3f4f6; padding: 40px 0; font-family: sans-serif; text-align: center;">
-            <table align="center" width="100%" style="max-width: 550px; background-color: #ffffff; border-radius: 24px; border-collapse: collapse; overflow: hidden;">
+          <div style="background-color: #f9fafb; padding: 50px 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; text-align: center;">
+            <table align="center" width="100%" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; border: 1px solid #f1f5f9; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
               <tr><td style="padding: 40px;">
-                <h1 style="color: #111827; margin: 0;">Back In Stock!</h1>
-                <p style="color: #4b5563;">Available now at <strong>${shopName}</strong>.</p>
+                <h1 style="color: #1e293b; font-size: 24px; margin-bottom: 8px;">Good News!</h1>
+                <p style="color: #64748b; font-size: 16px;">It's back in stock at <strong>${shopName}</strong>.</p>
                 
-                <div style="margin: 25px 0;">
-                  <img src="${dynamicStockBadge}" alt="Current Stock" width="200" style="display: inline-block; vertical-align: middle; min-height: 40px;">
+                <div style="margin: 24px 0;">
+                  <img src="${dynamicStockBadge}" alt="Live Stock Status" width="180" height="35" style="display: block; margin: 0 auto; border: 0; outline: none;">
                 </div>
 
-                <div style="border: 1px solid #e5e7eb; border-radius: 20px; padding: 20px;">
-                  <img src="${productImg}" style="width: 100%; max-width: 180px; border-radius: 10px;">
-                  <h3 style="margin: 15px 0 5px;">${variant.product.title}</h3>
-                  ${settings.includePrice ? `<p style="font-size: 20px; font-weight: bold; color: #4f46e5;">${currency} ${variant.price}</p>` : ''}
-                  <a href="${clickUrl}" style="display: inline-block; background-color: #111827; color: #ffffff; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold;">Shop Now</a>
+                <div style="padding: 24px; background-color: #f8fafc; border-radius: 12px; margin-top: 20px;">
+                  <img src="${productImg}" width="150" style="border-radius: 8px; margin-bottom: 16px;">
+                  <h2 style="font-size: 18px; color: #0f172a; margin: 0 0 8px 0;">${variant.product.title}</h2>
+                  ${settings.includePrice ? `<p style="font-size: 20px; font-weight: bold; color: #6366f1; margin-bottom: 20px;">${currency} ${variant.price}</p>` : ''}
+                  <a href="${clickUrl}" style="background-color: #0f172a; color: #ffffff; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Shop Now</a>
                 </div>
               </td></tr>
             </table>
-            <img src="${openUrl}" width="1" height="1" style="display:none;" />
           </div>
         `;
 
-        const sent = await sendEmail({
+        await sendEmail({
           from: `${shopName} <onboarding@resend.dev>`,
           to: sub.email,
           subject: `🎉 Back in Stock: ${variant.product.title}`,
           html: customerHtml
         });
-
-        if (sent) await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
+        await prisma.backInStock.update({ where: { id: sub.id }, data: { notified: true } });
       }
     } 
     
     // --- CASE 2: OUT OF STOCK (Admin Alert) ---
     else if (available <= 0) {
       const adminHtml = `
-        <div style="font-family: sans-serif; padding: 20px; border: 2px solid #ef4444; border-radius: 12px; max-width: 500px;">
-          <h2 style="color: #b91c1c;">🚨 Inventory Alert</h2>
-          <p><strong>Product:</strong> ${variant.product.title}</p>
-          <p><strong>Status:</strong> OUT OF STOCK</p>
-          ${settings.includeSku ? `<p><strong>SKU:</strong> ${inv.sku}</p>` : ''}
-          <a href="https://${shop}/admin/products">View in Shopify</a>
+        <div style="font-family: Arial, sans-serif; padding: 25px; border: 1px solid #fee2e2; background-color: #fef2f2; border-radius: 12px; max-width: 500px;">
+          <h2 style="color: #991b1b; margin-top: 0;">🚨 Out of Stock Alert</h2>
+          <p style="color: #450a0a;">The following item has run out of inventory:</p>
+          <div style="background-color: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #fecaca;">
+            <p><strong>Product:</strong> ${variant.product.title}</p>
+            <p><strong>Variant:</strong> ${variant.displayName}</p>
+            ${settings.includeSku ? `<p><strong>SKU:</strong> ${inv.sku}</p>` : ''}
+            ${settings.includeVendor ? `<p><strong>Vendor:</strong> ${variant.product.vendor}</p>` : ''}
+          </div>
+          <p style="text-align: center; margin-top: 20px;">
+            <a href="https://${shop}/admin/products" style="background-color: #b91c1c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">Update Inventory</a>
+          </p>
         </div>
       `;
       await sendEmail({

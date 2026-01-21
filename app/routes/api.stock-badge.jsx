@@ -5,9 +5,7 @@ export async function loader({ request }) {
   const inventoryItemId = url.searchParams.get("inventoryItemId");
   const shop = url.searchParams.get("shop");
 
-  if (!inventoryItemId || !shop) {
-    return new Response("Missing params", { status: 400 });
-  }
+  if (!inventoryItemId || !shop) return new Response("Params Error", { status: 400 });
 
   try {
     const { admin } = await unauthenticated.admin(shop);
@@ -15,11 +13,7 @@ export async function loader({ request }) {
       query getStock($id: ID!) {
         inventoryItem(id: $id) {
           inventoryLevels(first: 1) {
-            nodes {
-              quantities(names: ["available"]) {
-                quantity
-              }
-            }
+            nodes { quantities(names: ["available"]) { quantity } }
           }
         }
       }
@@ -28,14 +22,13 @@ export async function loader({ request }) {
     const resJson = await response.json();
     const stock = resJson.data?.inventoryItem?.inventoryLevels?.nodes?.[0]?.quantities?.[0]?.quantity ?? 0;
 
-    const color = stock < 5 ? "#ef4444" : "#22c55e";
-    const text = stock > 0 ? `ONLY ${stock} LEFT IN STOCK!` : "OUT OF STOCK";
+    const color = stock < 10 ? "#ef4444" : "#22c55e"; // Red if low, Green if okay
+    const text = stock > 0 ? `ONLY ${stock} LEFT!` : "OUT OF STOCK";
 
-    // SVG code
     const svg = `
-      <svg width="200" height="40" xmlns="http://www.w3.org/2000/svg">
-        <rect width="200" height="40" rx="20" fill="${color}" />
-        <text x="100" y="25" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle">
+      <svg width="180" height="35" viewBox="0 0 180 35" xmlns="http://www.w3.org/2000/svg">
+        <rect width="180" height="35" rx="17.5" fill="${color}" />
+        <text x="90" y="22" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#ffffff" text-anchor="middle">
           ${text}
         </text>
       </svg>
@@ -49,7 +42,6 @@ export async function loader({ request }) {
       },
     });
   } catch (e) {
-    console.error("Badge Error:", e);
     return new Response("Error", { status: 500 });
   }
 }
