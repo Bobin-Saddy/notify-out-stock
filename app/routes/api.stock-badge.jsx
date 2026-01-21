@@ -5,7 +5,10 @@ export async function loader({ request }) {
   const inventoryItemId = url.searchParams.get("inventoryItemId");
   const shop = url.searchParams.get("shop");
 
-  if (!inventoryItemId || !shop) return new Response("Error", { status: 400 });
+  // Error case: Missing data (Returns a black badge so you know it failed)
+  if (!inventoryItemId || !shop) {
+    return new Response(generateSvg("#000000", "ID ERROR"), { headers: { "Content-Type": "image/svg+xml" } });
+  }
 
   try {
     const { admin } = await unauthenticated.admin(shop);
@@ -27,20 +30,10 @@ export async function loader({ request }) {
     const resJson = await response.json();
     const stock = resJson.data?.inventoryItem?.inventoryLevels?.nodes?.[0]?.quantities?.[0]?.quantity ?? 0;
 
-    // Design logic for the badge
     const bgColor = stock <= 0 ? "#6b7280" : stock < 10 ? "#ef4444" : "#22c55e";
-    const text = stock <= 0 ? "SOLD OUT" : `ONLY ${stock} LEFT IN STOCK!`;
+    const text = stock <= 0 ? "SOLD OUT" : `ONLY ${stock} LEFT!`;
 
-    // SVG must have exact dimensions and namespaces for email clients
-    const svg = `
-    <svg width="200" height="40" viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg">
-      <rect width="200" height="40" rx="20" fill="${bgColor}"/>
-      <text x="100" y="25" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">
-        ${text}
-      </text>
-    </svg>`.trim();
-
-    return new Response(svg, {
+    return new Response(generateSvg(bgColor, text), {
       headers: {
         "Content-Type": "image/svg+xml",
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -48,7 +41,17 @@ export async function loader({ request }) {
       },
     });
   } catch (err) {
-    console.error("Badge Loader Error:", err);
-    return new Response("Error", { status: 500 });
+    return new Response(generateSvg("#374151", "STOCK ERROR"), { headers: { "Content-Type": "image/svg+xml" } });
   }
+}
+
+function generateSvg(color, text) {
+  return `
+    <svg width="200" height="40" viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg">
+      <rect width="200" height="40" rx="20" fill="${color}"/>
+      <text x="100" y="25" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">
+        ${text}
+      </text>
+    </svg>
+  `.trim();
 }
