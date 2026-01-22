@@ -317,7 +317,7 @@ export async function action({ request }) {
             where: { id: sub.id }, 
             data: { 
               notified: true,
-              subscribedPrice: currentPrice
+              subscribedPrice: sub.subscribedPrice || currentPrice // Keep existing or set current
             } 
           });
         } else {

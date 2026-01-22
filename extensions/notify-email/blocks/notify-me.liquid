@@ -57,6 +57,9 @@
   const shop = "{{ shop.permanent_domain }}";
   const productName = "{{ product.title | escape }}";
   const productHandle = "{{ product.handle }}";
+  
+  // ✅ Store all variants with prices
+  const allVariants = {{ product.variants | json }};
 
   // ✅ Listen for variant changes in the product form
   function updateVariantId() {
@@ -73,7 +76,7 @@
         btn.style.display = 'block';
       }
       
-      console.log("Variant changed to:", variantId, "Available:", currentVariant.available);
+      console.log("Variant changed to:", variantId, "Available:", currentVariant.available, "Price:", currentVariant.price);
     }
   }
 
@@ -84,7 +87,7 @@
     const variantIdFromUrl = urlParams.get('variant');
     
     if (variantIdFromUrl) {
-      const variant = {{ product.variants | json }}.find(v => v.id.toString().includes(variantIdFromUrl));
+      const variant = allVariants.find(v => v.id.toString().includes(variantIdFromUrl));
       if (variant) return variant;
     }
 
@@ -93,7 +96,7 @@
     if (form) {
       const variantIdInput = form.querySelector('select[name="id"], input[name="id"]');
       if (variantIdInput && variantIdInput.value) {
-        const variant = {{ product.variants | json }}.find(v => 
+        const variant = allVariants.find(v => 
           v.id.toString().includes(variantIdInput.value) || 
           v.id == variantIdInput.value
         );
@@ -139,7 +142,7 @@
       return;
     }
 
-    // Get current variant ID
+    // Get current variant
     const currentVariant = getCurrentVariant();
     if (!currentVariant) {
       message.textContent = "❌ Could not detect variant. Please try again.";
@@ -148,13 +151,24 @@
     }
 
     const variantId = currentVariant.id.toString().replace('gid://shopify/ProductVariant/', '');
+    const inventoryItemId = currentVariant.inventory_item_id ? currentVariant.inventory_item_id.toString() : null;
+    
+    // ✅ CRITICAL: Get current price (convert from cents to dollars)
+    const currentPrice = (currentVariant.price / 100).toFixed(2);
     
     submitBtn.disabled = true;
     submitBtn.textContent = "Subscribing...";
     message.textContent = "";
 
     try {
-      console.log("Subscribing:", { email, variantId, shop, productName });
+      console.log("Subscribing:", { 
+        email, 
+        variantId, 
+        inventoryItemId,
+        shop, 
+        productName,
+        currentPrice // ✅ Now included
+      });
 
       const res = await fetch("/apps/notify-out-stock/proxy/subscribe", {
         method: "POST",
@@ -162,8 +176,10 @@
         body: JSON.stringify({
           email: email,
           variantId: variantId,
+          inventoryItemId: inventoryItemId, // ✅ Added
           shop: shop,
-          productName: productName
+          productName: productName,
+          currentPrice: currentPrice // ✅ CRITICAL for price drop alerts
         })
       });
 
