@@ -71,6 +71,8 @@ export async function action({ request }) {
 
       console.log(`🔍 Variant ${variantId}, Price: ${currentPrice}`);
 
+      // Find ALL subscribers for this variant (both notified and not notified)
+      // This ensures price drop emails work even for out-of-stock products
       const subscribers = await prisma.backInStock.findMany({
         where: {
           shop: shop,
@@ -81,12 +83,13 @@ export async function action({ request }) {
         }
       });
 
-      console.log(`👥 ${subscribers.length} subscribers found`);
+      console.log(`👥 ${subscribers.length} subscribers found for this variant`);
 
       for (const sub of subscribers) {
         const subscribedPrice = sub.subscribedPrice;
 
-        if (!subscribedPrice) {
+        // If no subscribed price exists, set it to current price
+        if (!subscribedPrice || subscribedPrice === 0) {
           console.log(`⚠️ Setting initial price for subscriber ${sub.id}: ${currentPrice}`);
           await prisma.backInStock.update({
             where: { id: sub.id },
@@ -95,18 +98,22 @@ export async function action({ request }) {
           continue;
         }
 
+        // Check if price has DROPPED
         if (currentPrice < subscribedPrice) {
           const percentageOff = Math.round(((subscribedPrice - currentPrice) / subscribedPrice) * 100);
           
-          console.log(`💰 Price drop: ${subscribedPrice} → ${currentPrice} (${percentageOff}%)`);
+          console.log(`💰 Price drop detected for ${sub.email}: ${subscribedPrice} → ${currentPrice} (${percentageOff}% off)`);
 
+          // Only send if price drop is significant enough
           if (percentageOff >= (settings.priceDropThreshold || 5)) {
             try {
+              // Get full product details from Shopify
               const query = `
                 query getVariant($id: ID!) {
                   productVariant(id: $id) {
                     displayName
                     price
+                    inventoryQuantity
                     product {
                       title
                       handle
@@ -123,21 +130,44 @@ export async function action({ request }) {
 
               const json = await response.json();
               if (json.errors) {
-                console.error("GraphQL Error:", json.errors);
+                console.error("❌ GraphQL Error:", JSON.stringify(json.errors, null, 2));
                 continue;
               }
 
               const variantData = json.data?.productVariant;
-              if (!variantData) continue;
+              if (!variantData) {
+                console.log(`⚠️ Variant data not found for ${variantId}`);
+                continue;
+              }
 
               const currency = json.data?.shop?.currencyCode || "USD";
               const shopName = json.data?.shop?.name || shop;
               const productImg = variantData.product.featuredImage?.url || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
               const productUrl = `https://${shop}/products/${variantData.product.handle}`;
+              const inventoryQty = variantData.inventoryQuantity || 0;
 
               const openUrl = `${APP_URL}api/track-open?id=${sub.id}`;
               const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-              const priceDropBadge = getPriceDropBadge(subscribedPrice.toFixed(2), currentPrice.toFixed(2), currency, percentageOff);
+              const priceDropBadge = getPriceDropBadge(
+                subscribedPrice.toFixed(2), 
+                currentPrice.toFixed(2), 
+                currency, 
+                percentageOff
+              );
+
+              // Add stock status badge if out of stock
+              const stockStatusBadge = inventoryQty <= 0 ? `
+                <div style="background: linear-gradient(135deg, #f59e0b22 0%, #f59e0b44 100%); 
+                            border: 2px solid #f59e0b; 
+                            border-radius: 12px; 
+                            padding: 12px 20px; 
+                            margin: 20px 0;
+                            text-align: center;">
+                  <p style="margin: 0; color: #f59e0b; font-weight: 700; font-size: 16px;">
+                    ⚠️ Currently Out of Stock - Price Reduced for When It Returns!
+                  </p>
+                </div>
+              ` : '';
 
               const priceDropHtml = `
                 <div style="background-color: #f3f4f6; padding: 40px 0; font-family: sans-serif;">
@@ -151,8 +181,19 @@ export async function action({ request }) {
                         <img src="${productImg}" style="width: 100%; max-width: 250px; border-radius: 12px; margin-bottom: 20px;" alt="${variantData.product.title}">
                         <h2 style="color: #111827; margin: 15px 0;">${variantData.product.title}</h2>
                         <p style="color: #6b7280; margin: 10px 0;">${variantData.displayName}</p>
+                        
                         ${priceDropBadge}
-                        <a href="${clickUrl}" style="display: inline-block; background-color: #10b981; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 10px;">Shop Now & Save</a>
+                        ${stockStatusBadge}
+                        
+                        <a href="${clickUrl}" style="display: inline-block; background-color: ${inventoryQty > 0 ? '#10b981' : '#6b7280'}; color: white; padding: 16px 40px; border-radius: 12px; text-decoration: none; font-weight: bold; margin-top: 10px;">
+                          ${inventoryQty > 0 ? 'Shop Now & Save' : 'View Product'}
+                        </a>
+                        
+                        ${inventoryQty <= 0 ? `
+                          <p style="color: #6b7280; font-size: 14px; margin-top: 15px;">
+                            We'll notify you when it's back in stock at this great price!
+                          </p>
+                        ` : ''}
                       </div>
                     </td></tr>
                     <tr><td style="padding: 30px; text-align: center;">
@@ -165,36 +206,55 @@ export async function action({ request }) {
                 </div>
               `;
 
+              const emailSubject = inventoryQty > 0 
+                ? `💰 Price Drop: ${variantData.product.title} - Save ${percentageOff}%!`
+                : `💰 Price Reduced: ${variantData.product.title} - Save ${percentageOff}% When Back in Stock!`;
+
               const sent = await sendEmail({
                 from: `${shopName} <onboarding@resend.dev>`,
                 to: sub.email,
-                subject: `💰 Price Drop: ${variantData.product.title} - Save ${percentageOff}%!`,
+                subject: emailSubject,
                 html: priceDropHtml
               });
 
               if (sent) {
-                console.log(`✅ Email sent to ${sub.email}`);
+                console.log(`✅ Price drop email sent to ${sub.email} (Stock: ${inventoryQty > 0 ? 'In Stock' : 'Out of Stock'})`);
+                // Update the subscribed price to current price to prevent duplicate emails
                 await prisma.backInStock.update({
                   where: { id: sub.id },
                   data: { subscribedPrice: currentPrice }
                 });
+              } else {
+                console.log(`❌ Failed to send price drop email to ${sub.email}`);
               }
             } catch (err) {
-              console.error(`Error for subscriber ${sub.id}:`, err);
+              console.error(`❌ Error processing subscriber ${sub.id}:`, err);
             }
+          } else {
+            console.log(`⚠️ Price drop ${percentageOff}% is below threshold ${settings.priceDropThreshold}%`);
           }
-        } else if (currentPrice > subscribedPrice) {
+        } 
+        // If price INCREASED, update the subscribed price
+        else if (currentPrice > subscribedPrice) {
+          console.log(`📈 Price increased from ${subscribedPrice} to ${currentPrice} for ${sub.email}, updating reference price`);
           await prisma.backInStock.update({
             where: { id: sub.id },
             data: { subscribedPrice: currentPrice }
           });
+        } 
+        // Price unchanged
+        else {
+          console.log(`➡️ Price unchanged at ${currentPrice} for ${sub.email}`);
         }
       }
     }
 
+    console.log("✅ Product update webhook processed successfully");
     return new Response("OK", { status: 200 });
+
   } catch (err) {
-    console.error("Webhook Error:", err);
+    console.error("❌ Product Update Webhook Error:", err);
+    console.error("Error stack:", err.stack);
     return new Response("Error", { status: 500 });
   }
 }
