@@ -1,3 +1,7 @@
+{% comment %}
+  Only show notify button when product variant is OUT OF STOCK
+  This condition checks if the selected variant is unavailable
+{% endcomment %}
 {% if product.selected_or_first_available_variant.available == false %}
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
@@ -68,12 +72,14 @@
       const variantId = currentVariant.id.toString().replace('gid://shopify/ProductVariant/', '');
       btn.setAttribute('data-variant-id', variantId);
       
-      // Update button visibility based on stock
+      // ✅ IMPORTANT: Hide button if variant is IN STOCK
       if (currentVariant.available) {
         btn.style.display = 'none';
         modal.style.display = 'none';
+        console.log("✅ Variant IN STOCK - Button hidden");
       } else {
         btn.style.display = 'block';
+        console.log("⚠️ Variant OUT OF STOCK - Button shown");
       }
       
       console.log("Variant changed to:", variantId, "Available:", currentVariant.available, "Price:", currentVariant.price);
