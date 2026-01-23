@@ -57,7 +57,10 @@ model BackInStock {
   shop            String
   email           String
   variantId       String
-  inventoryItemId String?  
+  inventoryItemId String?
+  productId       String?          // ✅ ADD THIS
+  productTitle    String?          // ✅ ADD THIS
+  variantTitle    String?          // ✅ ADD THIS
   notified        Boolean  @default(false)
   opened          Boolean  @default(false)
   clicked         Boolean  @default(false)
@@ -66,6 +69,7 @@ model BackInStock {
   subscribedPrice Float?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
+  
   @@index([shop, inventoryItemId])
   @@index([shop, variantId])
 }
