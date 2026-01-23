@@ -1,237 +1,346 @@
 {% comment %}
   Only show notify button when product variant is OUT OF STOCK
-  This condition checks if the selected variant is unavailable
 {% endcomment %}
 {% if product.selected_or_first_available_variant.available == false %}
+
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
+
+/* Overlay */
+#bis-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  display: none;
+  z-index: 9998;
+}
+
+/* Modal */
+#bis-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+  width: 100%;
+  max-width: 420px;
+  background: {{ block.settings.popup_bg_color }};
+  color: {{ block.settings.popup_text_color }};
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  z-index: 9999;
+  display: none;
+  animation: bisPop 0.25s ease forwards;
+  font-family: {{ block.settings.popup_font }};
+}
+
+@keyframes bisPop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Header */
+#bis-modal h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Subheader */
+#bis-modal p.subtitle {
+  margin: 0 0 20px;
+  text-align: center;
+  opacity: 0.8;
+  font-size: 14px;
+}
+
+/* Close */
+#bis-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  border: none;
+  background: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: {{ block.settings.popup_text_color }};
+}
+
+/* Input */
+#bis-email {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  font-size: 15px;
+  margin-bottom: 14px;
+}
+
+/* Subscribe Button */
+#bis-submit {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  transition: 0.3s;
+}
+
+#bis-submit:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+#bis-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Message */
+#bis-message {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 14px;
+}
+
+#bis-message.success {
+  color: #10b981;
+}
+
+#bis-message.error {
+  color: #ef4444;
+}
+
+/* Main Button */
 #bis-btn { 
   width:100%; 
-  padding:15px; 
-  background:black; 
+  padding:16px; 
+  background: linear-gradient(135deg, #111, #333);
   color:white; 
   cursor:pointer; 
   border:none; 
-  border-radius: 5px; 
+  border-radius: 10px; 
   font-size: 16px; 
   font-weight: bold;
-  transition: background 0.3s;
-}
-#bis-btn:hover {
-  background: #333;
-}
-#bis-btn:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
-#bis-modal { 
-  margin-top: 15px; 
-  padding: 20px; 
-  background: #f9f9f9; 
-  border-radius: 5px; 
-  border: 1px solid #ddd;
 }
 </style>
 
-<button id="bis-btn" data-variant-id="{{ product.selected_or_first_available_variant.id }}">
-  🔔 Notify me when available
+<button id="bis-btn">
+  {{ block.settings.button_text | default: '🔔 Notify me when available' }}
 </button>
 
-<div id="bis-modal" style="display:none;">
+<div id="bis-overlay"></div>
+
+<div id="bis-modal">
+  <button id="bis-close">✕</button>
+
+  <h3>{{ block.settings.headertext }}</h3>
+  <p class="subtitle">{{ block.settings.subheadertext }}</p>
+
   <input 
     type="email" 
     id="bis-email" 
-    placeholder="Enter your email" 
-    style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #ddd;border-radius:5px;"
+    placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}" 
     required
   >
-  <button id="bis-submit" style="width:100%;padding:12px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:5px;font-weight:bold;">
-    Subscribe
+
+  <button id="bis-submit">
+    {{ block.settings.subscribe_text | default: 'Notify Me' }}
   </button>
-  <p id="bis-message" style="margin-top:10px;font-size:14px;"></p>
+
+  <p id="bis-message"></p>
 </div>
 
 <script>
 (function() {
   const btn = document.getElementById("bis-btn");
   const modal = document.getElementById("bis-modal");
+  const overlay = document.getElementById("bis-overlay");
+  const closeBtn = document.getElementById("bis-close");
   const submitBtn = document.getElementById("bis-submit");
   const emailInput = document.getElementById("bis-email");
-  const message = document.getElementById("bis-message");
-  const shop = "{{ shop.permanent_domain }}";
-  const productName = "{{ product.title | escape }}";
-  const productHandle = "{{ product.handle }}";
-  
-  // ✅ Store all variants with prices
-  const allVariants = {{ product.variants | json }};
+  const messageEl = document.getElementById("bis-message");
 
-  // ✅ Listen for variant changes in the product form
-  function updateVariantId() {
-    const currentVariant = getCurrentVariant();
-    if (currentVariant) {
-      const variantId = currentVariant.id.toString().replace('gid://shopify/ProductVariant/', '');
-      btn.setAttribute('data-variant-id', variantId);
-      
-      // ✅ IMPORTANT: Hide button if variant is IN STOCK
-      if (currentVariant.available) {
-        btn.style.display = 'none';
-        modal.style.display = 'none';
-        console.log("✅ Variant IN STOCK - Button hidden");
-      } else {
-        btn.style.display = 'block';
-        console.log("⚠️ Variant OUT OF STOCK - Button shown");
-      }
-      
-      console.log("Variant changed to:", variantId, "Available:", currentVariant.available, "Price:", currentVariant.price);
-    }
-  }
-
-  // ✅ Get current selected variant from Shopify's variant selector
   function getCurrentVariant() {
-    // Method 1: Check URL parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const variantIdFromUrl = urlParams.get('variant');
-    
-    if (variantIdFromUrl) {
-      const variant = allVariants.find(v => v.id.toString().includes(variantIdFromUrl));
-      if (variant) return variant;
-    }
-
-    // Method 2: Check selected options in form
-    const form = document.querySelector('form[action*="/cart/add"]');
-    if (form) {
-      const variantIdInput = form.querySelector('select[name="id"], input[name="id"]');
-      if (variantIdInput && variantIdInput.value) {
-        const variant = allVariants.find(v => 
-          v.id.toString().includes(variantIdInput.value) || 
-          v.id == variantIdInput.value
-        );
-        if (variant) return variant;
-      }
-    }
-
-    // Method 3: Return first unavailable variant as fallback
     return {{ product.selected_or_first_available_variant | json }};
   }
 
-  // ✅ Watch for variant changes
-  document.addEventListener('DOMContentLoaded', () => {
-    updateVariantId();
+  function updateVariantButton() {
+    const v = getCurrentVariant();
+    if (!v) return;
 
-    // Listen to variant selector changes
-    const variantSelectors = document.querySelectorAll('select[name="id"], input[name="id"], .product-form__input input, .product-form__input select');
-    variantSelectors.forEach(selector => {
-      selector.addEventListener('change', updateVariantId);
-    });
-
-    // Listen to URL changes (for variant links)
-    if ('URLSearchParams' in window) {
-      window.addEventListener('popstate', updateVariantId);
+    if (v.available) {
+      btn.style.display = "none";
+      modal.style.display = "none";
+      overlay.style.display = "none";
+    } else {
+      btn.style.display = "block";
     }
-  });
+  }
 
-  // ✅ Show modal on button click
+  function closeModal() {
+    modal.style.display = "none";
+    overlay.style.display = "none";
+    messageEl.textContent = "";
+    messageEl.className = "";
+  }
+
+  function showMessage(text, isError = false) {
+    messageEl.textContent = text;
+    messageEl.className = isError ? "error" : "success";
+  }
+
+  document.addEventListener("DOMContentLoaded", updateVariantButton);
+
+  // Open modal
   btn.onclick = () => {
     modal.style.display = "block";
-    message.textContent = "";
+    overlay.style.display = "block";
+    emailInput.value = "";
+    messageEl.textContent = "";
+    messageEl.className = "";
   };
 
-  // ✅ Handle subscription
+  // Close modal
+  closeBtn.onclick = closeModal;
+  overlay.onclick = closeModal;
+
+  // Submit form - THIS WAS MISSING!
   submitBtn.onclick = async () => {
     const email = emailInput.value.trim();
     
     // Validate email
+    if (!email) {
+      showMessage("Please enter your email", true);
+      return;
+    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email)) {
-      message.textContent = "❌ Please enter a valid email address";
-      message.style.color = "red";
+    if (!emailRegex.test(email)) {
+      showMessage("Please enter a valid email", true);
       return;
     }
 
     // Get current variant
-    const currentVariant = getCurrentVariant();
-    if (!currentVariant) {
-      message.textContent = "❌ Could not detect variant. Please try again.";
-      message.style.color = "red";
+    const variant = getCurrentVariant();
+    if (!variant) {
+      showMessage("Product variant not found", true);
       return;
     }
 
-    const variantId = currentVariant.id.toString().replace('gid://shopify/ProductVariant/', '');
-    const inventoryItemId = currentVariant.inventory_item_id ? currentVariant.inventory_item_id.toString() : null;
-    
-    // ✅ CRITICAL: Get current price (convert from cents to dollars)
-    const currentPrice = (currentVariant.price / 100).toFixed(2);
-    
+    // Disable button during submission
     submitBtn.disabled = true;
     submitBtn.textContent = "Subscribing...";
-    message.textContent = "";
 
     try {
-      console.log("Subscribing:", { 
-        email, 
-        variantId, 
-        inventoryItemId,
-        shop, 
-        productName,
-        currentPrice // ✅ Now included
-      });
-
-      const res = await fetch("/apps/notify-out-stock/proxy/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email,
-          variantId: variantId,
-          inventoryItemId: inventoryItemId, // ✅ Added
-          shop: shop,
-          productName: productName,
-          currentPrice: currentPrice // ✅ CRITICAL for price drop alerts
-        })
-      });
-
-      const text = await res.text();
-      console.log("Response:", text);
+      // Send to your backend API (using your existing endpoint)
+      const shop = "{{ shop.permanent_domain }}";
+      const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
+      const inventoryItemId = variant.inventory_item_id ? variant.inventory_item_id.toString() : null;
+      const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
       
-      const data = text ? JSON.parse(text) : {};
+      console.log("Subscribing:", { email, variantId, inventoryItemId, shop, currentPrice });
+      
+    // In your Liquid file, update the fetch call:
+const variant = getCurrentVariant();
+const product = {{ product | json }};
 
-      if (data.success) {
-        message.textContent = "✅ Subscribed! We'll email you when it's back in stock.";
-        message.style.color = "green";
+const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    email: email,
+    variantId: variantId,
+    inventoryItemId: variant.inventory_item_id ? variant.inventory_item_id.toString() : null,
+    productId: product.id ? product.id.toString() : null,  // ✅ ADD THIS
+    productName: product.title,
+    variantTitle: variant.title || product.title,  // ✅ ADD THIS
+    shop: shop,
+    currentPrice: currentPrice
+  })
+});
+
+      // Log response for debugging
+      console.log("Response status:", response.status);
+      console.log("Response headers:", response.headers);
+
+      // Check if response has content
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("Response is not JSON. Content-Type:", contentType);
+        const text = await response.text();
+        console.error("Response body:", text);
+        showMessage("Server error. Check console for details.", true);
+        return;
+      }
+
+      const data = await response.json();
+      console.log("Response data:", data);
+
+      if (response.ok) {
+        showMessage("✅ You're subscribed! We'll notify you when it's back.", false);
         emailInput.value = "";
         
-        // Hide modal after 3 seconds
-        setTimeout(() => { 
-          modal.style.display = "none"; 
-          message.textContent = "";
-        }, 3000);
+        // Close modal after 2 seconds
+        setTimeout(closeModal, 2000);
       } else {
-        message.textContent = "❌ " + (data.error || "Something went wrong. Please try again.");
-        message.style.color = "red";
+        showMessage(data.message || "Subscription failed. Please try again.", true);
       }
-    } catch (err) {
-      console.error("Subscription error:", err);
-      message.textContent = "❌ Network error. Please try again.";
-      message.style.color = "red";
+    } catch (error) {
+      console.error("Subscription error:", error);
+      showMessage("Network error. Please try again.", true);
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = "Subscribe";
+      submitBtn.textContent = {{ block.settings.subscribe_text | json }};
     }
   };
 
-  // ✅ Allow Enter key to submit
-  emailInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
+  // Allow Enter key to submit
+  emailInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
       submitBtn.click();
     }
   });
 })();
 </script>
+
 {% endif %}
 
 {% schema %}
 {
   "name": "Notify Me",
   "target": "section",
-  "settings": []
+  "settings": [
+    { "type": "text", "id": "button_text", "label": "Button Text", "default": "🔔 Notify me when available" },
+    { "type": "text", "id": "headertext", "label": "Header Text", "default": "Get Notified" },
+    { "type": "text", "id": "subheadertext", "label": "Subheader Text", "default": "Enter your email and we'll notify you when this product is back in stock." },
+    { "type": "text", "id": "email_placeholder", "label": "Email Placeholder", "default": "Enter your email" },
+    { "type": "text", "id": "subscribe_text", "label": "Subscribe Button Text", "default": "Notify Me" },
+
+    { "type": "color", "id": "popup_bg_color", "label": "Popup Background Color", "default": "#ffffff" },
+    { "type": "color", "id": "popup_text_color", "label": "Popup Text Color", "default": "#000000" },
+
+    {
+      "type": "select",
+      "id": "popup_font",
+      "label": "Popup Font Family",
+      "default": "Inter, sans-serif",
+      "options": [
+        { "value": "Inter, sans-serif", "label": "Inter" },
+        { "value": "Poppins, sans-serif", "label": "Poppins" },
+        { "value": "Roboto, sans-serif", "label": "Roboto" },
+        { "value": "Montserrat, sans-serif", "label": "Montserrat" }
+      ]
+    }
+  ]
 }
 {% endschema %}
