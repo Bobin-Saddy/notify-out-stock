@@ -26,7 +26,6 @@ export const loader = async ({ request }) => {
     }),
     ...(filterStatus === "notified" && { notified: true }),
     ...(filterStatus === "pending" && { notified: false }),
-    ...(filterStatus === "purchased" && { purchased: true }),
   };
 
   const subscribers = await prisma.backInStock.findMany({
@@ -38,7 +37,6 @@ export const loader = async ({ request }) => {
     total: await prisma.backInStock.count({ where: { shop } }),
     notified: await prisma.backInStock.count({ where: { shop, notified: true } }),
     pending: await prisma.backInStock.count({ where: { shop, notified: false } }),
-    purchased: await prisma.backInStock.count({ where: { shop, purchased: true } }),
   };
 
   return json({ subscribers, stats, shop });
@@ -58,47 +56,58 @@ export const action = async ({ request }) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // Generate CSV
+    // Generate CSV with proper escaping
     const csvHeaders = [
       "ID",
       "Email",
       "Product Title",
       "Variant Title",
       "Subscribed Price",
+      "Variant ID",
+      "Inventory Item ID",
       "Notified",
       "Opened",
       "Clicked",
-      "Purchased",
       "Created At",
       "Updated At",
     ];
 
     const csvRows = subscribers.map((sub) => [
-      sub.id,
-      sub.email,
+      sub.id || "",
+      sub.email || "",
       sub.productTitle || "",
       sub.variantTitle || "",
-      sub.subscribedPrice || "",
+      sub.subscribedPrice ? `$${sub.subscribedPrice.toFixed(2)}` : "",
+      sub.variantId || "",
+      sub.inventoryItemId || "",
       sub.notified ? "Yes" : "No",
       sub.opened ? "Yes" : "No",
       sub.clicked ? "Yes" : "No",
-      sub.purchased ? "Yes" : "No",
-      new Date(sub.createdAt).toLocaleString(),
-      new Date(sub.updatedAt).toLocaleString(),
+      sub.createdAt ? new Date(sub.createdAt).toLocaleString() : "",
+      sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : "",
     ]);
 
+    // Properly escape CSV fields
+    const escapeCSVField = (field) => {
+      const stringField = String(field);
+      if (stringField.includes(",") || stringField.includes('"') || stringField.includes("\n")) {
+        return `"${stringField.replace(/"/g, '""')}"`;
+      }
+      return stringField;
+    };
+
     const csvContent = [
-      csvHeaders.join(","),
-      ...csvRows.map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
-      ),
+      csvHeaders.map(escapeCSVField).join(","),
+      ...csvRows.map((row) => row.map(escapeCSVField).join(",")),
     ].join("\n");
+
+    const timestamp = new Date().toISOString().split('T')[0];
 
     return new Response(csvContent, {
       status: 200,
       headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="subscribers-${new Date().toISOString()}.csv"`,
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="subscribers-${timestamp}.csv"`,
       },
     });
   }
@@ -160,9 +169,11 @@ export default function SubscribersPage() {
           display: flex;
           gap: 15px;
           align-items: end;
+          flex-wrap: wrap;
         }
         .form-group {
           flex: 1;
+          min-width: 200px;
         }
         .form-group label {
           display: block;
@@ -185,6 +196,11 @@ export default function SubscribersPage() {
           cursor: pointer;
           font-size: 14px;
           font-weight: 500;
+          transition: all 0.2s;
+        }
+        .btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .btn-primary {
           background: #5c6ac4;
@@ -197,16 +213,20 @@ export default function SubscribersPage() {
           background: #50b83c;
           color: white;
         }
+        .btn-success:hover {
+          background: #47a835;
+        }
         .table-card {
           background: white;
           border: 1px solid #ddd;
           border-radius: 8px;
-          overflow: hidden;
+          overflow-x: auto;
           box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         table {
           width: 100%;
           border-collapse: collapse;
+          min-width: 900px;
         }
         th {
           background: #f6f6f7;
@@ -216,11 +236,15 @@ export default function SubscribersPage() {
           font-weight: 600;
           color: #202223;
           border-bottom: 1px solid #ddd;
+          white-space: nowrap;
         }
         td {
           padding: 12px;
           border-bottom: 1px solid #f1f1f1;
           font-size: 14px;
+          max-width: 250px;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         tr:hover {
           background: #f9f9f9;
@@ -231,6 +255,7 @@ export default function SubscribersPage() {
           border-radius: 12px;
           font-size: 12px;
           font-weight: 500;
+          white-space: nowrap;
         }
         .badge-success {
           background: #d1f7c4;
@@ -249,6 +274,8 @@ export default function SubscribersPage() {
           justify-content: space-between;
           align-items: center;
           margin-bottom: 30px;
+          flex-wrap: wrap;
+          gap: 15px;
         }
         .header h1 {
           margin: 0;
@@ -264,6 +291,10 @@ export default function SubscribersPage() {
         }
         .empty-state p {
           color: #6d7175;
+        }
+        .text-muted {
+          color: #6d7175;
+          font-size: 13px;
         }
       `}</style>
 
@@ -291,10 +322,6 @@ export default function SubscribersPage() {
           <h3>Notified</h3>
           <p>{stats.notified}</p>
         </div>
-        <div className="stat-card">
-          <h3>Purchased</h3>
-          <p>{stats.purchased}</p>
-        </div>
       </div>
 
       {/* Filters */}
@@ -318,7 +345,6 @@ export default function SubscribersPage() {
               <option value="all">All</option>
               <option value="pending">Pending</option>
               <option value="notified">Notified</option>
-              <option value="purchased">Purchased</option>
             </select>
           </div>
           <button type="submit" className="btn btn-primary">
@@ -338,29 +364,30 @@ export default function SubscribersPage() {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Email</th>
                 <th>Product</th>
                 <th>Variant</th>
-                <th>Price</th>
+                <th>Subscribed Price</th>
                 <th>Status</th>
                 <th>Opened</th>
                 <th>Clicked</th>
-                <th>Purchased</th>
                 <th>Date</th>
               </tr>
             </thead>
             <tbody>
               {subscribers.map((sub) => (
                 <tr key={sub.id}>
-                  <td>{sub.id}</td>
-                  <td>{sub.email}</td>
-                  <td>{sub.productTitle || "N/A"}</td>
-                  <td>{sub.variantTitle || "N/A"}</td>
+                  <td title={sub.email}>{sub.email}</td>
+                  <td title={sub.productTitle || "N/A"}>
+                    {sub.productTitle || <span className="text-muted">No product title</span>}
+                  </td>
+                  <td title={sub.variantTitle || "N/A"}>
+                    {sub.variantTitle || <span className="text-muted">Default variant</span>}
+                  </td>
                   <td>
-                    {sub.subscribedPrice
-                      ? `$${sub.subscribedPrice.toFixed(2)}`
-                      : "N/A"}
+                    {sub.subscribedPrice != null
+                      ? `$${Number(sub.subscribedPrice).toFixed(2)}`
+                      : <span className="text-muted">N/A</span>}
                   </td>
                   <td>
                     <span
@@ -368,7 +395,7 @@ export default function SubscribersPage() {
                         sub.notified ? "badge-success" : "badge-info"
                       }`}
                     >
-                      {sub.notified ? "Notified" : "Pending"}
+                      {sub.notified ? "✅ Notified" : "⏳ Pending"}
                     </span>
                   </td>
                   <td>
@@ -390,15 +417,14 @@ export default function SubscribersPage() {
                     </span>
                   </td>
                   <td>
-                    <span
-                      className={`badge ${
-                        sub.purchased ? "badge-success" : "badge-default"
-                      }`}
-                    >
-                      {sub.purchased ? "Yes" : "No"}
-                    </span>
+                    {sub.createdAt 
+                      ? new Date(sub.createdAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        })
+                      : <span className="text-muted">N/A</span>}
                   </td>
-                  <td>{new Date(sub.createdAt).toLocaleDateString()}</td>
                 </tr>
               ))}
             </tbody>
