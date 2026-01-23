@@ -1,4 +1,3 @@
-// File: app/routes/app.proxy.subscribe.jsx
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
@@ -7,106 +6,62 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  console.log("🔔 PROXY ACTION HIT");
+  console.log("PROXY ACTION HIT");
 
+  // Handle CORS for local testing if necessary
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204 });
   }
 
   try {
-    // Authenticate the App Proxy request
-    await authenticate.public.appProxy(request);
+    // 1. Authenticate the App Proxy request
+    // This gives us the 'admin' object to make GraphQL calls
+    const { admin } = await authenticate.public.appProxy(request);
     
     const body = await request.json();
-    console.log("📧 Request body:", body);
-    
-    const { 
-      email, 
-      variantId, 
-      shop, 
-      productName, 
-      currentPrice,
-      productId,        // ✅ Frontend se bhejo
-      variantTitle,     // ✅ Frontend se bhejo
-      inventoryItemId   // ✅ Frontend se bhejo
-    } = body;
+    const { email, variantId, shop } = body;
 
-    // Validate required fields
     if (!email || !variantId || !shop) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Missing required fields" }), 
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Missing fields" }), { status: 400 });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Invalid email format" }), 
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    const subscribedPrice = currentPrice ? parseFloat(currentPrice) : 0;
-
-    // Check if already subscribed
-    const existing = await prisma.backInStock.findFirst({
-      where: {
-        email: email,
-        shop: shop,
-        variantId: String(variantId)
+    // 2. Fetch the Inventory Item ID using GraphQL
+    // This is much faster than the REST variants.json endpoint
+    const response = await admin.graphql(`
+      query {
+        productVariant(id: "gid://shopify/ProductVariant/${variantId}") {
+          inventoryItem {
+            id
+          }
+        }
       }
-    });
+    `);
 
-    if (existing) {
-      console.log("⚠️ Already subscribed:", email);
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: "You're already subscribed to this product!" 
-        }), 
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    const variantData = await response.json();
+    
+    // Extract the clean numeric ID from the GID (e.g., gid://shopify/InventoryItem/12345 -> 12345)
+    const rawInventoryId = variantData.data?.productVariant?.inventoryItem?.id;
+    const inventoryItemId = rawInventoryId ? rawInventoryId.split('/').pop() : null;
 
-    // Create subscription
+    console.log(`🔍 Mapping Variant ${variantId} to Inventory Item ${inventoryItemId}`);
+
+    // 3. Save to Prisma with the Inventory ID
     const subscription = await prisma.backInStock.create({
       data: {
-        email: email,
+        email,
         variantId: String(variantId),
-        inventoryItemId: inventoryItemId ? String(inventoryItemId) : null,
-        productId: productId ? String(productId) : null,
-        productTitle: productName || "Unknown Product",
-        variantTitle: variantTitle || "",
-        subscribedPrice: subscribedPrice,
-        shop: shop,
-        notified: false,
-        createdAt: new Date()
+        inventoryItemId: String(inventoryItemId), // Now this will NOT be null
+        shop,
       },
     });
 
-    console.log("✅ Subscription created:", subscription.id);
-
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: "Successfully subscribed! We'll notify you when it's back in stock.",
-        data: subscription 
-      }), 
+      JSON.stringify({ success: true, data: subscription }), 
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
 
   } catch (err) {
-    console.error("❌ SUBSCRIBE ERROR:", err);
-    
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: "Failed to subscribe. Please try again.",
-        details: err.message 
-      }), 
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    console.error("SUBSCRIBE ERROR:", err);
+    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
 };

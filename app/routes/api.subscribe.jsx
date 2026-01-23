@@ -1,75 +1,52 @@
-// File: app/routes/api.subscribe.jsx
-// This handles the form submission when user subscribes
-
 import { json } from "@remix-run/node";
-import prisma from "../db.server";
+import db from "../db.server";
 
-export async function action({ request }) {
+export const action = async ({ request }) => {
+  // CORS issues se bachne ke liye
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+  }
+
   try {
-    // Handle both JSON and FormData
-    const contentType = request.headers.get("content-type");
-    let email, variantId, inventoryItemId, shop, currentPrice;
-
-    if (contentType && contentType.includes("application/json")) {
-      const body = await request.json();
-      email = body.email;
-      variantId = body.variantId;
-      inventoryItemId = body.inventoryItemId;
-      shop = body.shop;
-      currentPrice = body.currentPrice;
-    } else {
-      const formData = await request.formData();
-      email = formData.get("email");
-      variantId = formData.get("variantId");
-      inventoryItemId = formData.get("inventoryItemId");
-      shop = formData.get("shop");
-      currentPrice = formData.get("currentPrice");
-    }
-
-    console.log("📧 Subscription request:", { email, variantId, inventoryItemId, shop, currentPrice });
+    const { email, variantId, shop } = await request.json();
 
     if (!email || !variantId || !shop) {
-      return json({ error: "Missing required fields" }, { status: 400 });
+      return json({ error: "Missing fields" }, { status: 400 });
     }
 
-    // Check if already subscribed
-    const existing = await prisma.backInStock.findFirst({
-      where: {
-        email,
-        variantId,
-        shop,
-      },
+    // 1. Database mein shop entry check karein
+    await db.shop.upsert({
+      where: { shopDomain: shop },
+      update: {},
+      create: { shopDomain: shop, emailUsage: 0 }
     });
 
-    if (existing) {
-      console.log("⚠️ User already subscribed:", email);
-      return json({ 
-        success: false, 
-        message: "You're already subscribed to this product!" 
-      });
-    }
-
-    // Create new subscription with current price
-    const subscription = await prisma.backInStock.create({
+    // 2. Subscription save karein
+    await db.subscription.create({
       data: {
-        email,
-        variantId,
-        inventoryItemId: inventoryItemId || null,
-        shop,
-        notified: false,
-        subscribedPrice: currentPrice ? parseFloat(currentPrice) : null, // IMPORTANT: Set price here
-      },
+        customerEmail: email,
+        variantId: variantId.toString(),
+        shopDomain: shop,
+        status: "pending"
+      }
     });
 
-    console.log("✅ Subscription created:", subscription.id, "Price set to:", currentPrice);
-
-    return json({ 
-      success: true, 
-      message: "You'll be notified when this product is back in stock!" 
+    return json({ success: true }, {
+      headers: { "Access-Control-Allow-Origin": "*" }
     });
 
   } catch (error) {
-    console.error("❌ Subscription error:", error);
-    return json({ error: "Failed to subscribe" }, { status: 500 });
+    console.error("Subscription Error:", error);
+    return json({ error: "Database error" }, { status: 500 });
   }
-}
+};
+
+// Loader dena zaroori hai Proxy ke liye
+export const loader = () => json({});
