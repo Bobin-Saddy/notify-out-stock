@@ -247,20 +247,26 @@
       
       console.log("Subscribing:", { email, variantId, inventoryItemId, shop, currentPrice });
       
-      const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: email,
-          variantId: variantId,
-          inventoryItemId: inventoryItemId,
-          shop: shop,
-          productName: {{ product.title | json }},
-          currentPrice: currentPrice
-        })
-      });
+    // In your Liquid file, update the fetch call:
+const variant = getCurrentVariant();
+const product = {{ product | json }};
+
+const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    email: email,
+    variantId: variantId,
+    inventoryItemId: variant.inventory_item_id ? variant.inventory_item_id.toString() : null,
+    productId: product.id ? product.id.toString() : null,  // ✅ ADD THIS
+    productName: product.title,
+    variantTitle: variant.title || product.title,  // ✅ ADD THIS
+    shop: shop,
+    currentPrice: currentPrice
+  })
+});
 
       // Log response for debugging
       console.log("Response status:", response.status);
