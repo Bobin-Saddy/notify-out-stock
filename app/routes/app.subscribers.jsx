@@ -1,6 +1,6 @@
 // File: app/routes/app.subscribers.jsx
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate, Form } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
@@ -249,22 +249,16 @@ export default function SubscribersPage() {
       primaryAction={{
         content: "Export CSV",
         onAction: () => {
-          const form = document.createElement("form");
-          form.method = "POST";
-          form.action = "";
-          
-          const input = document.createElement("input");
-          input.type = "hidden";
-          input.name = "action";
-          input.value = "export";
-          form.appendChild(input);
-          
-          document.body.appendChild(form);
-          form.submit();
-          document.body.removeChild(form);
+          // Trigger the form submission
+          document.getElementById('export-form').requestSubmit();
         },
       }}
     >
+      {/* Hidden form for CSV export */}
+      <Form method="POST" id="export-form" style={{ display: 'none' }}>
+        <input type="hidden" name="action" value="export" />
+      </Form>
+
       <Layout>
         {/* Warning Banner if product data is missing */}
         {hasProductDataIssues && (
