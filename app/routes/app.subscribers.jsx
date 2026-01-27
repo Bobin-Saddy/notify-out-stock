@@ -1,13 +1,12 @@
-// File: app/routes/app.subscribers.jsx
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+
 import {
   Page,
   Layout,
   Card,
-  DataTable,
   Badge,
   Button,
   Text,
@@ -16,10 +15,13 @@ import {
   EmptyState,
   TextField,
   Select,
+  IndexTable,
+  useIndexResourceState,
 } from "@shopify/polaris";
+
 import { useState, useCallback } from "react";
 
-// Loader: Fetch all subscribers
+// ================= LOADER =================
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
@@ -28,9 +30,8 @@ export const loader = async ({ request }) => {
   const searchQuery = url.searchParams.get("search") || "";
   const filterStatus = url.searchParams.get("status") || "all";
 
-  // Build where clause
   const whereClause = {
-    shop: shop,
+    shop,
     ...(searchQuery && {
       OR: [
         { email: { contains: searchQuery, mode: "insensitive" } },
@@ -55,10 +56,10 @@ export const loader = async ({ request }) => {
     purchased: await prisma.backInStock.count({ where: { shop, purchased: true } }),
   };
 
-  return json({ subscribers, stats, shop });
+  return json({ subscribers, stats });
 };
 
-// Action: Handle CSV export
+// ================= ACTION =================
 export const action = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
@@ -72,33 +73,30 @@ export const action = async ({ request }) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // Generate CSV
     const csvHeaders = [
       "ID",
       "Email",
-      "Product Title",
-      "Variant Title",
-      "Subscribed Price",
+      "Product",
+      "Variant",
+      "Price",
       "Notified",
       "Opened",
       "Clicked",
       "Purchased",
       "Created At",
-      "Updated At",
     ];
 
-    const csvRows = subscribers.map((sub) => [
-      sub.id,
-      sub.email,
-      sub.productTitle || "",
-      sub.variantTitle || "",
-      sub.subscribedPrice || "",
-      sub.notified ? "Yes" : "No",
-      sub.opened ? "Yes" : "No",
-      sub.clicked ? "Yes" : "No",
-      sub.purchased ? "Yes" : "No",
-      new Date(sub.createdAt).toLocaleString(),
-      new Date(sub.updatedAt).toLocaleString(),
+    const csvRows = subscribers.map((s) => [
+      s.id,
+      s.email,
+      s.productTitle || "",
+      s.variantTitle || "",
+      s.subscribedPrice || "",
+      s.notified ? "Yes" : "No",
+      s.opened ? "Yes" : "No",
+      s.clicked ? "Yes" : "No",
+      s.purchased ? "Yes" : "No",
+      new Date(s.createdAt).toLocaleString(),
     ]);
 
     const csvContent = [
@@ -112,7 +110,7 @@ export const action = async ({ request }) => {
       status: 200,
       headers: {
         "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="subscribers-${new Date().toISOString()}.csv"`,
+        "Content-Disposition": `attachment; filename="subscribers.csv"`,
       },
     });
   }
@@ -120,6 +118,7 @@ export const action = async ({ request }) => {
   return json({ error: "Invalid action" }, { status: 400 });
 };
 
+// ================= PAGE =================
 export default function SubscribersPage() {
   const { subscribers, stats } = useLoaderData();
   const navigate = useNavigate();
@@ -127,22 +126,17 @@ export default function SubscribersPage() {
   const [searchValue, setSearchValue] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const handleSearchChange = useCallback((value) => {
-    setSearchValue(value);
-  }, []);
+  const { selectedResources, allResourcesSelected, handleSelectionChange } =
+    useIndexResourceState(subscribers);
 
-  const handleFilterChange = useCallback((value) => {
-    setFilterStatus(value);
-  }, []);
-
-  const handleSearch = useCallback(() => {
+  const handleSearch = () => {
     const params = new URLSearchParams();
     if (searchValue) params.set("search", searchValue);
     if (filterStatus !== "all") params.set("status", filterStatus);
     navigate(`?${params.toString()}`);
-  }, [searchValue, filterStatus, navigate]);
+  };
 
-  const handleExport = async () => {
+  const handleExport = () => {
     const form = document.createElement("form");
     form.method = "POST";
     form.action = "/app/subscribers";
@@ -151,27 +145,12 @@ export default function SubscribersPage() {
     input.type = "hidden";
     input.name = "action";
     input.value = "export";
-    form.appendChild(input);
 
+    form.appendChild(input);
     document.body.appendChild(form);
     form.submit();
     document.body.removeChild(form);
   };
-
-  const rows = subscribers.map((sub) => [
-    sub.id,
-    sub.email,
-    sub.productTitle || "N/A",
-    sub.variantTitle || "N/A",
-    sub.subscribedPrice ? `$${sub.subscribedPrice.toFixed(2)}` : "N/A",
-    <Badge tone={sub.notified ? "success" : "info"}>
-      {sub.notified ? "Notified" : "Pending"}
-    </Badge>,
-    <Badge tone={sub.opened ? "success" : ""}>{sub.opened ? "Yes" : "No"}</Badge>,
-    <Badge tone={sub.clicked ? "success" : ""}>{sub.clicked ? "Yes" : "No"}</Badge>,
-    <Badge tone={sub.purchased ? "success" : ""}>{sub.purchased ? "Yes" : "No"}</Badge>,
-    new Date(sub.createdAt).toLocaleDateString(),
-  ]);
 
   const filterOptions = [
     { label: "All", value: "all" },
@@ -183,73 +162,46 @@ export default function SubscribersPage() {
   return (
     <Page
       title="Back in Stock Subscribers"
-      primaryAction={{
-        content: "Export CSV",
-        onAction: handleExport,
-      }}
+      primaryAction={{ content: "Export CSV", onAction: handleExport }}
     >
       <Layout>
-        {/* Stats Cards */}
+        {/* ===== Stats ===== */}
         <Layout.Section>
           <InlineStack gap="400">
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Total Subscribers</Text>
-                <Text variant="heading2xl" as="p">{stats.total}</Text>
-              </BlockStack>
-            </Card>
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Pending</Text>
-                <Text variant="heading2xl" as="p">{stats.pending}</Text>
-              </BlockStack>
-            </Card>
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Notified</Text>
-                <Text variant="heading2xl" as="p">{stats.notified}</Text>
-              </BlockStack>
-            </Card>
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Purchased</Text>
-                <Text variant="heading2xl" as="p">{stats.purchased}</Text>
-              </BlockStack>
-            </Card>
+            <StatCard title="Total" value={stats.total} />
+            <StatCard title="Pending" value={stats.pending} />
+            <StatCard title="Notified" value={stats.notified} />
+            <StatCard title="Purchased" value={stats.purchased} />
           </InlineStack>
         </Layout.Section>
 
-        {/* Filters */}
+        {/* ===== Filters ===== */}
         <Layout.Section>
           <Card>
-            <BlockStack gap="400">
-              <InlineStack gap="400" align="start">
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    label="Search"
-                    value={searchValue}
-                    onChange={handleSearchChange}
-                    placeholder="Search by email or product"
-                    autoComplete="off"
-                  />
-                </div>
-                <div style={{ minWidth: "200px" }}>
-                  <Select
-                    label="Filter by status"
-                    options={filterOptions}
-                    value={filterStatus}
-                    onChange={handleFilterChange}
-                  />
-                </div>
-                <div style={{ paddingTop: "26px" }}>
-                  <Button onClick={handleSearch}>Search</Button>
-                </div>
-              </InlineStack>
-            </BlockStack>
+            <InlineStack gap="400" align="start">
+              <div style={{ flex: 1 }}>
+                <TextField
+                  label="Search"
+                  value={searchValue}
+                  onChange={setSearchValue}
+                />
+              </div>
+              <div style={{ minWidth: 200 }}>
+                <Select
+                  label="Status"
+                  options={filterOptions}
+                  value={filterStatus}
+                  onChange={setFilterStatus}
+                />
+              </div>
+              <div style={{ paddingTop: 26 }}>
+                <Button onClick={handleSearch}>Search</Button>
+              </div>
+            </InlineStack>
           </Card>
         </Layout.Section>
 
-        {/* Subscribers Table */}
+        {/* ===== Table ===== */}
         <Layout.Section>
           <Card padding="0">
             {subscribers.length === 0 ? (
@@ -257,40 +209,71 @@ export default function SubscribersPage() {
                 heading="No subscribers yet"
                 image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
               >
-                <p>Subscribers will appear here when customers sign up for back in stock notifications.</p>
+                <p>Subscribers will appear here when customers subscribe.</p>
               </EmptyState>
             ) : (
-              <DataTable
-                columnContentTypes={[
-                  "numeric",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                ]}
+              <IndexTable
+                resourceName={{ singular: "subscriber", plural: "subscribers" }}
+                itemCount={subscribers.length}
+                selectedItemsCount={
+                  allResourcesSelected ? "All" : selectedResources.length
+                }
+                onSelectionChange={handleSelectionChange}
                 headings={[
-                  "ID",
-                  "Email",
-                  "Product",
-                  "Variant",
-                  "Price",
-                  "Status",
-                  "Opened",
-                  "Clicked",
-                  "Purchased",
-                  "Date",
+                  { title: "Email" },
+                  { title: "Product" },
+                  { title: "Variant" },
+                  { title: "Price" },
+                  { title: "Status" },
+                  { title: "Opened" },
+                  { title: "Clicked" },
+                  { title: "Purchased" },
+                  { title: "Date" },
                 ]}
-                rows={rows}
-              />
+              >
+                {subscribers.map((s, index) => (
+                  <IndexTable.Row
+                    id={s.id}
+                    key={s.id}
+                    position={index}
+                    selected={selectedResources.includes(s.id)}
+                  >
+                    <IndexTable.Cell>{s.email}</IndexTable.Cell>
+                    <IndexTable.Cell>{s.productTitle || "—"}</IndexTable.Cell>
+                    <IndexTable.Cell>{s.variantTitle || "—"}</IndexTable.Cell>
+                    <IndexTable.Cell>
+                      {s.subscribedPrice ? `$${s.subscribedPrice}` : "—"}
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      <Badge tone={s.notified ? "success" : "info"}>
+                        {s.notified ? "Notified" : "Pending"}
+                      </Badge>
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>{s.opened ? "Yes" : "No"}</IndexTable.Cell>
+                    <IndexTable.Cell>{s.clicked ? "Yes" : "No"}</IndexTable.Cell>
+                    <IndexTable.Cell>{s.purchased ? "Yes" : "No"}</IndexTable.Cell>
+                    <IndexTable.Cell>
+                      {new Date(s.createdAt).toLocaleDateString()}
+                    </IndexTable.Cell>
+                  </IndexTable.Row>
+                ))}
+              </IndexTable>
             )}
           </Card>
         </Layout.Section>
       </Layout>
     </Page>
+  );
+}
+
+// ================= Small Component =================
+function StatCard({ title, value }) {
+  return (
+    <Card>
+      <BlockStack gap="200">
+        <Text variant="headingMd">{title}</Text>
+        <Text variant="heading2xl">{value}</Text>
+      </BlockStack>
+    </Card>
   );
 }
