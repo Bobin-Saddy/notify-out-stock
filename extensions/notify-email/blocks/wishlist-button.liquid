@@ -1,0 +1,248 @@
+{% comment %}
+  Wishlist button - Shows on all products (works best on IN STOCK products)
+  File: wishlist-button.liquid
+{% endcomment %}
+
+<style>
+/* Wishlist Button */
+#wishlist-btn { 
+  width: 100%; 
+  padding: 16px; 
+  color: white; 
+  cursor: pointer; 
+  border: none; 
+  border-radius: 10px; 
+  font-size: 16px; 
+  font-weight: bold;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, {{ block.settings.wishlist_color }}, {{ block.settings.wishlist_color_hover }});
+}
+
+#wishlist-btn.in-wishlist {
+  background: linear-gradient(135deg, {{ block.settings.in_wishlist_color }}, {{ block.settings.in_wishlist_color_hover }});
+}
+
+#wishlist-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+#wishlist-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wishlist-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.wishlist-text {
+  font-weight: 700;
+}
+</style>
+
+<button id="wishlist-btn" data-in-wishlist="false">
+  <span class="wishlist-icon">{{ block.settings.icon_default | default: '❤️' }}</span>
+  <span class="wishlist-text">{{ block.settings.button_text | default: 'Add to Wishlist' }}</span>
+</button>
+
+<script>
+(function() {
+  const wishlistBtn = document.getElementById("wishlist-btn");
+  const wishlistIcon = wishlistBtn.querySelector('.wishlist-icon');
+  const wishlistText = wishlistBtn.querySelector('.wishlist-text');
+  
+  const shop = "{{ shop.permanent_domain }}";
+  const productId = {{ product.id | json }};
+  const productTitle = {{ product.title | json }};
+  const productImage = {{ product.featured_image | img_url: 'medium' | json }};
+  const productHandle = {{ product.handle | json }};
+
+  const iconDefault = {{ block.settings.icon_default | default: '❤️' | json }};
+  const iconInWishlist = {{ block.settings.icon_in_wishlist | default: '💚' | json }};
+  const textDefault = {{ block.settings.button_text | default: 'Add to Wishlist' | json }};
+  const textInWishlist = {{ block.settings.button_text_added | default: 'In Wishlist' | json }};
+
+  function getCurrentVariant() {
+    return {{ product.selected_or_first_available_variant | json }};
+  }
+
+  // Check if product is already in wishlist
+  async function checkWishlistStatus() {
+    const customerEmail = "{{ customer.email }}";
+    if (!customerEmail) return;
+
+    try {
+      const response = await fetch('/apps/notify-out-stock/proxy/wishlist/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: customerEmail,
+          productId: String(productId),
+          shop: shop
+        })
+      });
+
+      const data = await response.json();
+      if (data.inWishlist) {
+        updateButtonState(true);
+      }
+    } catch (error) {
+      console.error("Check wishlist error:", error);
+    }
+  }
+
+  // Update button appearance
+  function updateButtonState(isInWishlist) {
+    wishlistBtn.classList.toggle('in-wishlist', isInWishlist);
+    wishlistBtn.setAttribute('data-in-wishlist', isInWishlist ? 'true' : 'false');
+    wishlistIcon.textContent = isInWishlist ? iconInWishlist : iconDefault;
+    wishlistText.textContent = isInWishlist ? textInWishlist : textDefault;
+  }
+
+  // Add/Remove from wishlist
+  wishlistBtn.onclick = async () => {
+    let customerEmail = "{{ customer.email }}";
+    
+    // If not logged in, prompt for email
+    if (!customerEmail) {
+      customerEmail = prompt("Please enter your email to add to wishlist:");
+      if (!customerEmail) return;
+      
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(customerEmail)) {
+        alert("Please enter a valid email address");
+        return;
+      }
+    }
+
+    const isInWishlist = wishlistBtn.getAttribute('data-in-wishlist') === 'true';
+    const variant = getCurrentVariant();
+    const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
+    const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
+
+    wishlistBtn.disabled = true;
+
+    try {
+      const endpoint = isInWishlist 
+        ? '/apps/notify-out-stock/proxy/wishlist/remove' 
+        : '/apps/notify-out-stock/proxy/wishlist/add';
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: customerEmail,
+          productId: String(productId),
+          variantId: variantId,
+          productTitle: productTitle,
+          variantTitle: variant.title || "Default",
+          productImage: productImage,
+          productHandle: productHandle,
+          price: currentPrice,
+          shop: shop
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        updateButtonState(!isInWishlist);
+        
+        if (!isInWishlist) {
+          // Added to wishlist
+          alert('✅ Added to your wishlist!');
+        } else {
+          // Removed from wishlist
+          alert('❌ Removed from wishlist');
+        }
+      } else {
+        alert(data.message || data.error || 'Something went wrong');
+      }
+    } catch (error) {
+      console.error("Wishlist error:", error);
+      alert('Network error. Please try again.');
+    } finally {
+      wishlistBtn.disabled = false;
+    }
+  };
+
+  // Check status on load
+  document.addEventListener("DOMContentLoaded", () => {
+    checkWishlistStatus();
+  });
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Wishlist Button",
+  "target": "section",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Add a wishlist button to your product page. Customers can save products for later."
+    },
+    { 
+      "type": "text", 
+      "id": "button_text", 
+      "label": "Button Text (Not in Wishlist)", 
+      "default": "Add to Wishlist" 
+    },
+    { 
+      "type": "text", 
+      "id": "button_text_added", 
+      "label": "Button Text (In Wishlist)", 
+      "default": "In Wishlist" 
+    },
+    { 
+      "type": "text", 
+      "id": "icon_default", 
+      "label": "Icon (Not in Wishlist)", 
+      "default": "❤️",
+      "info": "Use emoji or leave empty"
+    },
+    { 
+      "type": "text", 
+      "id": "icon_in_wishlist", 
+      "label": "Icon (In Wishlist)", 
+      "default": "💚",
+      "info": "Use emoji or leave empty"
+    },
+    {
+      "type": "header",
+      "content": "Button Colors"
+    },
+    { 
+      "type": "color", 
+      "id": "wishlist_color", 
+      "label": "Button Color", 
+      "default": "#ec4899" 
+    },
+    { 
+      "type": "color", 
+      "id": "wishlist_color_hover", 
+      "label": "Button Color (Hover)", 
+      "default": "#ef4444" 
+    },
+    { 
+      "type": "color", 
+      "id": "in_wishlist_color", 
+      "label": "Button Color (In Wishlist)", 
+      "default": "#10b981" 
+    },
+    { 
+      "type": "color", 
+      "id": "in_wishlist_color_hover", 
+      "label": "Button Color (In Wishlist - Hover)", 
+      "default": "#059669" 
+    }
+  ]
+}
+{% endschema %}

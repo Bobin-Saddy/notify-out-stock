@@ -1,6 +1,8 @@
 {% comment %}
-  Shows notify button when OUT OF STOCK and wishlist button when IN STOCK
+  Only show notify button when product variant is OUT OF STOCK
+  File: notify-me-button.liquid
 {% endcomment %}
+{% if product.selected_or_first_available_variant.available == false %}
 
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
@@ -116,10 +118,11 @@
   color: #ef4444;
 }
 
-/* Main Buttons */
-#bis-btn, #wishlist-btn { 
+/* Main Button */
+#bis-btn { 
   width:100%; 
   padding:16px; 
+  background: linear-gradient(135deg, #111, #333);
   color:white; 
   cursor:pointer; 
   border:none; 
@@ -127,66 +130,43 @@
   font-size: 16px; 
   font-weight: bold;
   transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
 }
 
-#bis-btn {
-  background: linear-gradient(135deg, #111, #333);
-}
-
-#wishlist-btn {
-  background: linear-gradient(135deg, #ec4899, #ef4444);
-}
-
-#wishlist-btn.in-wishlist {
-  background: linear-gradient(135deg, #10b981, #059669);
-}
-
-#bis-btn:hover, #wishlist-btn:hover {
+#bis-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 </style>
 
-<!-- Out of Stock: Show Notify Button -->
-{% if product.selected_or_first_available_variant.available == false %}
-  <button id="bis-btn">
-    🔔 {{ block.settings.button_text | default: 'Notify me when available' }}
-  </button>
-{% else %}
-  <!-- In Stock: Show Wishlist Button -->
-  <button id="wishlist-btn" data-in-wishlist="false">
-    <span class="wishlist-icon">❤️</span>
-    <span class="wishlist-text">Add to Wishlist</span>
-  </button>
-{% endif %}
+<button id="bis-btn">
+  🔔 {{ block.settings.button_text | default: 'Notify me when available' }}
+</button>
 
 <div id="bis-overlay"></div>
 
-<!-- Notify Me Modal -->
 <div id="bis-modal">
   <button id="bis-close">✕</button>
+
   <h3>{{ block.settings.headertext }}</h3>
   <p class="subtitle">{{ block.settings.subheadertext }}</p>
+
   <input 
     type="email" 
     id="bis-email" 
     placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}" 
     required
   >
+
   <button id="bis-submit">
     {{ block.settings.subscribe_text | default: 'Notify Me' }}
   </button>
+
   <p id="bis-message"></p>
 </div>
 
 <script>
 (function() {
-  const bisBtn = document.getElementById("bis-btn");
-  const wishlistBtn = document.getElementById("wishlist-btn");
+  const btn = document.getElementById("bis-btn");
   const modal = document.getElementById("bis-modal");
   const overlay = document.getElementById("bis-overlay");
   const closeBtn = document.getElementById("bis-close");
@@ -194,14 +174,21 @@
   const emailInput = document.getElementById("bis-email");
   const messageEl = document.getElementById("bis-message");
 
-  const shop = "{{ shop.permanent_domain }}";
-  const productId = {{ product.id | json }};
-  const productTitle = {{ product.title | json }};
-  const productImage = {{ product.featured_image | img_url: 'medium' | json }};
-  const productHandle = {{ product.handle | json }};
-
   function getCurrentVariant() {
     return {{ product.selected_or_first_available_variant | json }};
+  }
+
+  function updateVariantButton() {
+    const v = getCurrentVariant();
+    if (!v) return;
+
+    if (v.available) {
+      btn.style.display = "none";
+      modal.style.display = "none";
+      overlay.style.display = "none";
+    } else {
+      btn.style.display = "block";
+    }
   }
 
   function closeModal() {
@@ -216,218 +203,141 @@
     messageEl.className = isError ? "error" : "success";
   }
 
-  // ========== NOTIFY ME FUNCTIONALITY ==========
-  if (bisBtn) {
-    bisBtn.onclick = () => {
-      modal.style.display = "block";
-      overlay.style.display = "block";
-      emailInput.value = "";
-      messageEl.textContent = "";
-      messageEl.className = "";
-    };
+  document.addEventListener("DOMContentLoaded", updateVariantButton);
 
-    closeBtn.onclick = closeModal;
-    overlay.onclick = closeModal;
+  // Open modal
+  btn.onclick = () => {
+    modal.style.display = "block";
+    overlay.style.display = "block";
+    emailInput.value = "";
+    messageEl.textContent = "";
+    messageEl.className = "";
+  };
 
-    submitBtn.onclick = async () => {
-      const email = emailInput.value.trim();
-      
-      if (!email) {
-        showMessage("Please enter your email", true);
-        return;
-      }
+  // Close modal
+  closeBtn.onclick = closeModal;
+  overlay.onclick = closeModal;
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        showMessage("Please enter a valid email", true);
-        return;
-      }
-
-      const variant = getCurrentVariant();
-      if (!variant) {
-        showMessage("Product variant not found", true);
-        return;
-      }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Subscribing...";
-
-      try {
-        const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
-        const inventoryItemId = variant.inventory_item_id ? variant.inventory_item_id.toString() : null;
-        const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
-        
-        const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: email,
-            variantId: variantId,
-            inventoryItemId: inventoryItemId,
-            shop: shop,
-            productName: productTitle,
-            variantTitle: variant.title,
-            productId: String(productId),
-            currentPrice: currentPrice
-          })
-        });
-
-        const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-          const text = await response.text();
-          console.error("Response body:", text);
-          showMessage("Server error. Please try again.", true);
-          return;
-        }
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          showMessage("✅ Subscribed! We'll notify you when it's back.", false);
-          emailInput.value = "";
-          setTimeout(closeModal, 2000);
-        } else {
-          showMessage(data.message || data.error || "Failed. Please try again.", true);
-        }
-      } catch (error) {
-        console.error("Subscription error:", error);
-        showMessage("Network error. Please try again.", true);
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = {{ block.settings.subscribe_text | json }};
-      }
-    };
-
-    emailInput.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        submitBtn.click();
-      }
-    });
-  }
-
-  // ========== WISHLIST FUNCTIONALITY ==========
-  if (wishlistBtn) {
-    const wishlistIcon = wishlistBtn.querySelector('.wishlist-icon');
-    const wishlistText = wishlistBtn.querySelector('.wishlist-text');
+  // Submit form
+  submitBtn.onclick = async () => {
+    const email = emailInput.value.trim();
     
-    // Check if product is already in wishlist
-    async function checkWishlistStatus() {
-      const customerEmail = "{{ customer.email }}";
-      if (!customerEmail) return;
-
-      try {
-        const response = await fetch('/apps/notify-out-stock/proxy/wishlist/check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: customerEmail,
-            productId: String(productId),
-            shop: shop
-          })
-        });
-
-        const data = await response.json();
-        if (data.inWishlist) {
-          wishlistBtn.classList.add('in-wishlist');
-          wishlistBtn.setAttribute('data-in-wishlist', 'true');
-          wishlistIcon.textContent = '💚';
-          wishlistText.textContent = 'In Wishlist';
-        }
-      } catch (error) {
-        console.error("Check wishlist error:", error);
-      }
+    // Validate email
+    if (!email) {
+      showMessage("Please enter your email", true);
+      return;
     }
 
-    // Add/Remove from wishlist
-    wishlistBtn.onclick = async () => {
-      let customerEmail = "{{ customer.email }}";
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      showMessage("Please enter a valid email", true);
+      return;
+    }
+
+    // Get current variant
+    const variant = getCurrentVariant();
+    if (!variant) {
+      showMessage("Product variant not found", true);
+      return;
+    }
+
+    // Disable button during submission
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Subscribing...";
+
+    try {
+      // Prepare data
+      const shop = "{{ shop.permanent_domain }}";
+      const productTitle = {{ product.title | json }};
+      const productId = {{ product.id | json }};
       
-      // If not logged in, prompt for email
-      if (!customerEmail) {
-        customerEmail = prompt("Please enter your email to add to wishlist:");
-        if (!customerEmail) return;
-        
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(customerEmail)) {
-          alert("Please enter a valid email address");
-          return;
-        }
-      }
-
-      const isInWishlist = wishlistBtn.getAttribute('data-in-wishlist') === 'true';
-      const variant = getCurrentVariant();
+      // Get variant details
       const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
+      const variantTitle = variant.title || variant.name || "Default";
+      const inventoryItemId = variant.inventory_item_id ? variant.inventory_item_id.toString() : null;
       const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
+      
+      const requestData = {
+        email: email,
+        variantId: variantId,
+        inventoryItemId: inventoryItemId,
+        productId: String(productId),
+        productName: productTitle,
+        variantTitle: variantTitle,
+        shop: shop,
+        currentPrice: currentPrice
+      };
+      
+      console.log("📤 Sending subscription request:", requestData);
+      
+      const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData)
+      });
 
-      wishlistBtn.disabled = true;
+      // Log response for debugging
+      console.log("Response status:", response.status);
 
-      try {
-        const endpoint = isInWishlist ? '/apps/notify-out-stock/proxy/wishlist/remove' : '/apps/notify-out-stock/proxy/wishlist/add';
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: customerEmail,
-            productId: String(productId),
-            variantId: variantId,
-            productTitle: productTitle,
-            variantTitle: variant.title,
-            productImage: productImage,
-            productHandle: productHandle,
-            price: currentPrice,
-            shop: shop
-          })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          if (isInWishlist) {
-            // Removed from wishlist
-            wishlistBtn.classList.remove('in-wishlist');
-            wishlistBtn.setAttribute('data-in-wishlist', 'false');
-            wishlistIcon.textContent = '❤️';
-            wishlistText.textContent = 'Add to Wishlist';
-            alert('Removed from wishlist');
-          } else {
-            // Added to wishlist
-            wishlistBtn.classList.add('in-wishlist');
-            wishlistBtn.setAttribute('data-in-wishlist', 'true');
-            wishlistIcon.textContent = '💚';
-            wishlistText.textContent = 'In Wishlist';
-            alert('Added to wishlist! ❤️');
-          }
-        } else {
-          alert(data.message || data.error || 'Something went wrong');
-        }
-      } catch (error) {
-        console.error("Wishlist error:", error);
-        alert('Network error. Please try again.');
-      } finally {
-        wishlistBtn.disabled = false;
+      // Check if response has content
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("Response is not JSON. Content-Type:", contentType);
+        const text = await response.text();
+        console.error("Response body:", text);
+        showMessage("Server error. Please try again.", true);
+        return;
       }
-    };
 
-    // Check status on load
-    checkWishlistStatus();
-  }
+      const data = await response.json();
+      console.log("Response data:", data);
+
+      if (response.ok && data.success) {
+        showMessage("✅ Subscribed! We'll notify you when it's back.", false);
+        emailInput.value = "";
+        
+        // Close modal after 2 seconds
+        setTimeout(closeModal, 2000);
+      } else {
+        showMessage(data.message || data.error || "Subscription failed. Please try again.", true);
+      }
+    } catch (error) {
+      console.error("Subscription error:", error);
+      showMessage("Network error. Please try again.", true);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = {{ block.settings.subscribe_text | json }};
+    }
+  };
+
+  // Allow Enter key to submit
+  emailInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitBtn.click();
+    }
+  });
 })();
 </script>
 
+{% endif %}
+
 {% schema %}
 {
-  "name": "Notify Me + Wishlist",
+  "name": "Notify Me Button",
   "target": "section",
   "settings": [
-    { "type": "text", "id": "button_text", "label": "Notify Button Text", "default": "Notify me when available" },
+    { "type": "text", "id": "button_text", "label": "Button Text", "default": "Notify me when available" },
     { "type": "text", "id": "headertext", "label": "Header Text", "default": "Get Notified" },
     { "type": "text", "id": "subheadertext", "label": "Subheader Text", "default": "Enter your email and we'll notify you when this product is back in stock." },
     { "type": "text", "id": "email_placeholder", "label": "Email Placeholder", "default": "Enter your email" },
     { "type": "text", "id": "subscribe_text", "label": "Subscribe Button Text", "default": "Notify Me" },
+
     { "type": "color", "id": "popup_bg_color", "label": "Popup Background Color", "default": "#ffffff" },
     { "type": "color", "id": "popup_text_color", "label": "Popup Text Color", "default": "#000000" },
+
     {
       "type": "select",
       "id": "popup_font",
