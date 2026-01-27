@@ -1,12 +1,13 @@
+// File: app/routes/app.subscribers.jsx
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate, Form } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-
 import {
   Page,
   Layout,
   Card,
+  DataTable,
   Badge,
   Button,
   Text,
@@ -15,13 +16,10 @@ import {
   EmptyState,
   TextField,
   Select,
-  IndexTable,
-  useIndexResourceState,
 } from "@shopify/polaris";
-
 import { useState, useCallback } from "react";
 
-// ================= LOADER =================
+// Loader: Fetch all subscribers
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
@@ -30,18 +28,18 @@ export const loader = async ({ request }) => {
   const searchQuery = url.searchParams.get("search") || "";
   const filterStatus = url.searchParams.get("status") || "all";
 
+  // Build where clause
   const whereClause = {
-    shop,
+    shop: shop,
     ...(searchQuery && {
       OR: [
-        { email: { contains: searchQuery, mode: "insensitive" } },
-        { productTitle: { contains: searchQuery, mode: "insensitive" } },
-        { variantTitle: { contains: searchQuery, mode: "insensitive" } },
+        { email: { contains: searchQuery } },
+        { productTitle: { contains: searchQuery } },
+        { variantTitle: { contains: searchQuery } },
       ],
     }),
     ...(filterStatus === "notified" && { notified: true }),
     ...(filterStatus === "pending" && { notified: false }),
-    ...(filterStatus === "purchased" && { purchased: true }),
   };
 
   const subscribers = await prisma.backInStock.findMany({
@@ -49,76 +47,108 @@ export const loader = async ({ request }) => {
     orderBy: { createdAt: "desc" },
   });
 
+  console.log(`📊 Loaded ${subscribers.length} subscribers for shop: ${shop}`);
+
   const stats = {
     total: await prisma.backInStock.count({ where: { shop } }),
     notified: await prisma.backInStock.count({ where: { shop, notified: true } }),
     pending: await prisma.backInStock.count({ where: { shop, notified: false } }),
-    purchased: await prisma.backInStock.count({ where: { shop, purchased: true } }),
   };
 
-  return json({ subscribers, stats });
+  return json({ subscribers, stats, shop });
 };
 
-// ================= ACTION =================
+// Action: Handle CSV export
 export const action = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
+  try {
+    const { session } = await authenticate.admin(request);
+    const shop = session.shop;
 
-  const formData = await request.formData();
-  const actionType = formData.get("action");
+    const formData = await request.formData();
+    const actionType = formData.get("action");
 
-  if (actionType === "export") {
-    const subscribers = await prisma.backInStock.findMany({
-      where: { shop },
-      orderBy: { createdAt: "desc" },
-    });
+    console.log("📥 Action called:", actionType, "for shop:", shop);
 
-    const csvHeaders = [
-      "ID",
-      "Email",
-      "Product",
-      "Variant",
-      "Price",
-      "Notified",
-      "Opened",
-      "Clicked",
-      "Purchased",
-      "Created At",
-    ];
+    if (actionType === "export") {
+      const subscribers = await prisma.backInStock.findMany({
+        where: { shop },
+        orderBy: { createdAt: "desc" },
+      });
 
-    const csvRows = subscribers.map((s) => [
-      s.id,
-      s.email,
-      s.productTitle || "",
-      s.variantTitle || "",
-      s.subscribedPrice || "",
-      s.notified ? "Yes" : "No",
-      s.opened ? "Yes" : "No",
-      s.clicked ? "Yes" : "No",
-      s.purchased ? "Yes" : "No",
-      new Date(s.createdAt).toLocaleString(),
-    ]);
+      console.log(`📊 Exporting ${subscribers.length} subscribers`);
 
-    const csvContent = [
-      csvHeaders.join(","),
-      ...csvRows.map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
-      ),
-    ].join("\n");
+      if (subscribers.length === 0) {
+        return new Response("No subscribers to export", {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
 
-    return new Response(csvContent, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="subscribers.csv"`,
-      },
-    });
+      // Generate CSV with proper escaping
+      const csvHeaders = [
+        "ID",
+        "Email",
+        "Product Title",
+        "Variant Title",
+        "Subscribed Price",
+        "Variant ID",
+        "Inventory Item ID",
+        "Notified",
+        "Opened",
+        "Clicked",
+        "Created At",
+        "Updated At",
+      ];
+
+      const csvRows = subscribers.map((sub) => [
+        sub.id || "",
+        sub.email || "",
+        sub.productTitle || "",
+        sub.variantTitle || "",
+        sub.subscribedPrice != null ? `$${Number(sub.subscribedPrice).toFixed(2)}` : "",
+        sub.variantId || "",
+        sub.inventoryItemId || "",
+        sub.notified ? "Yes" : "No",
+        sub.opened ? "Yes" : "No",
+        sub.clicked ? "Yes" : "No",
+        sub.createdAt ? new Date(sub.createdAt).toLocaleString() : "",
+        sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : "",
+      ]);
+
+      // Properly escape CSV fields
+      const escapeCSVField = (field) => {
+        const stringField = String(field);
+        if (stringField.includes(",") || stringField.includes('"') || stringField.includes("\n")) {
+          return `"${stringField.replace(/"/g, '""')}"`;
+        }
+        return stringField;
+      };
+
+      const csvContent = [
+        csvHeaders.map(escapeCSVField).join(","),
+        ...csvRows.map((row) => row.map(escapeCSVField).join(",")),
+      ].join("\n");
+
+      const timestamp = new Date().toISOString().split('T')[0];
+
+      console.log("✅ CSV generated successfully");
+
+      return new Response(csvContent, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="subscribers-${timestamp}.csv"`,
+        },
+      });
+    }
+
+    return json({ error: "Invalid action" }, { status: 400 });
+  } catch (error) {
+    console.error("❌ Export error:", error);
+    return json({ error: error.message }, { status: 500 });
   }
-
-  return json({ error: "Invalid action" }, { status: 400 });
 };
 
-// ================= PAGE =================
 export default function SubscribersPage() {
   const { subscribers, stats } = useLoaderData();
   const navigate = useNavigate();
@@ -126,82 +156,127 @@ export default function SubscribersPage() {
   const [searchValue, setSearchValue] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState(subscribers);
+  const handleSearchChange = useCallback((value) => {
+    setSearchValue(value);
+  }, []);
 
-  const handleSearch = () => {
+  const handleFilterChange = useCallback((value) => {
+    setFilterStatus(value);
+  }, []);
+
+  const handleSearch = useCallback(() => {
     const params = new URLSearchParams();
     if (searchValue) params.set("search", searchValue);
     if (filterStatus !== "all") params.set("status", filterStatus);
     navigate(`?${params.toString()}`);
-  };
+  }, [searchValue, filterStatus, navigate]);
 
-  const handleExport = () => {
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = "/app/subscribers";
-
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = "action";
-    input.value = "export";
-
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
-  };
+  const rows = subscribers.map((sub) => [
+    sub.id,
+    sub.email,
+    sub.productTitle || <Text tone="subdued">No product title</Text>,
+    sub.variantTitle || <Text tone="subdued">Default variant</Text>,
+    sub.subscribedPrice != null 
+      ? `$${Number(sub.subscribedPrice).toFixed(2)}` 
+      : <Text tone="subdued">N/A</Text>,
+    <Badge tone={sub.notified ? "success" : "info"}>
+      {sub.notified ? "✅ Notified" : "⏳ Pending"}
+    </Badge>,
+    <Badge tone={sub.opened ? "success" : ""}>{sub.opened ? "Yes" : "No"}</Badge>,
+    <Badge tone={sub.clicked ? "success" : ""}>{sub.clicked ? "Yes" : "No"}</Badge>,
+    sub.createdAt 
+      ? new Date(sub.createdAt).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        })
+      : "N/A",
+  ]);
 
   const filterOptions = [
     { label: "All", value: "all" },
     { label: "Pending", value: "pending" },
     { label: "Notified", value: "notified" },
-    { label: "Purchased", value: "purchased" },
   ];
 
   return (
     <Page
-      title="Back in Stock Subscribers"
-      primaryAction={{ content: "Export CSV", onAction: handleExport }}
+      title="📬 Back in Stock Subscribers"
+      primaryAction={{
+        content: "📥 Export CSV",
+        onAction: () => {
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = "";
+          
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "action";
+          input.value = "export";
+          form.appendChild(input);
+          
+          document.body.appendChild(form);
+          form.submit();
+          document.body.removeChild(form);
+        },
+      }}
     >
       <Layout>
-        {/* ===== Stats ===== */}
+        {/* Stats Cards */}
         <Layout.Section>
           <InlineStack gap="400">
-            <StatCard title="Total" value={stats.total} />
-            <StatCard title="Pending" value={stats.pending} />
-            <StatCard title="Notified" value={stats.notified} />
-            <StatCard title="Purchased" value={stats.purchased} />
+            <Card>
+              <BlockStack gap="200">
+                <Text variant="headingMd" as="h2">Total Subscribers</Text>
+                <Text variant="heading2xl" as="p">{stats.total}</Text>
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="200">
+                <Text variant="headingMd" as="h2">Pending</Text>
+                <Text variant="heading2xl" as="p">{stats.pending}</Text>
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="200">
+                <Text variant="headingMd" as="h2">Notified</Text>
+                <Text variant="heading2xl" as="p">{stats.notified}</Text>
+              </BlockStack>
+            </Card>
           </InlineStack>
         </Layout.Section>
 
-        {/* ===== Filters ===== */}
+        {/* Filters */}
         <Layout.Section>
           <Card>
-            <InlineStack gap="400" align="start">
-              <div style={{ flex: 1 }}>
-                <TextField
-                  label="Search"
-                  value={searchValue}
-                  onChange={setSearchValue}
-                />
-              </div>
-              <div style={{ minWidth: 200 }}>
-                <Select
-                  label="Status"
-                  options={filterOptions}
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                />
-              </div>
-              <div style={{ paddingTop: 26 }}>
-                <Button onClick={handleSearch}>Search</Button>
-              </div>
-            </InlineStack>
+            <BlockStack gap="400">
+              <InlineStack gap="400" align="start">
+                <div style={{ flex: 1 }}>
+                  <TextField
+                    label="Search"
+                    value={searchValue}
+                    onChange={handleSearchChange}
+                    placeholder="Search by email or product"
+                    autoComplete="off"
+                  />
+                </div>
+                <div style={{ minWidth: "200px" }}>
+                  <Select
+                    label="Filter by status"
+                    options={filterOptions}
+                    value={filterStatus}
+                    onChange={handleFilterChange}
+                  />
+                </div>
+                <div style={{ paddingTop: "26px" }}>
+                  <Button onClick={handleSearch}>🔍 Search</Button>
+                </div>
+              </InlineStack>
+            </BlockStack>
           </Card>
         </Layout.Section>
 
-        {/* ===== Table ===== */}
+        {/* Subscribers Table */}
         <Layout.Section>
           <Card padding="0">
             {subscribers.length === 0 ? (
@@ -209,71 +284,38 @@ export default function SubscribersPage() {
                 heading="No subscribers yet"
                 image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
               >
-                <p>Subscribers will appear here when customers subscribe.</p>
+                <p>Subscribers will appear here when customers sign up for back in stock notifications.</p>
               </EmptyState>
             ) : (
-              <IndexTable
-                resourceName={{ singular: "subscriber", plural: "subscribers" }}
-                itemCount={subscribers.length}
-                selectedItemsCount={
-                  allResourcesSelected ? "All" : selectedResources.length
-                }
-                onSelectionChange={handleSelectionChange}
-                headings={[
-                  { title: "Email" },
-                  { title: "Product" },
-                  { title: "Variant" },
-                  { title: "Price" },
-                  { title: "Status" },
-                  { title: "Opened" },
-                  { title: "Clicked" },
-                  { title: "Purchased" },
-                  { title: "Date" },
+              <DataTable
+                columnContentTypes={[
+                  "numeric",
+                  "text",
+                  "text",
+                  "text",
+                  "text",
+                  "text",
+                  "text",
+                  "text",
+                  "text",
                 ]}
-              >
-                {subscribers.map((s, index) => (
-                  <IndexTable.Row
-                    id={s.id}
-                    key={s.id}
-                    position={index}
-                    selected={selectedResources.includes(s.id)}
-                  >
-                    <IndexTable.Cell>{s.email}</IndexTable.Cell>
-                    <IndexTable.Cell>{s.productTitle || "—"}</IndexTable.Cell>
-                    <IndexTable.Cell>{s.variantTitle || "—"}</IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {s.subscribedPrice ? `$${s.subscribedPrice}` : "—"}
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>
-                      <Badge tone={s.notified ? "success" : "info"}>
-                        {s.notified ? "Notified" : "Pending"}
-                      </Badge>
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>{s.opened ? "Yes" : "No"}</IndexTable.Cell>
-                    <IndexTable.Cell>{s.clicked ? "Yes" : "No"}</IndexTable.Cell>
-                    <IndexTable.Cell>{s.purchased ? "Yes" : "No"}</IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {new Date(s.createdAt).toLocaleDateString()}
-                    </IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
+                headings={[
+                  "ID",
+                  "Email",
+                  "Product",
+                  "Variant",
+                  "Subscribed Price",
+                  "Status",
+                  "Opened",
+                  "Clicked",
+                  "Date",
+                ]}
+                rows={rows}
+              />
             )}
           </Card>
         </Layout.Section>
       </Layout>
     </Page>
-  );
-}
-
-// ================= Small Component =================
-function StatCard({ title, value }) {
-  return (
-    <Card>
-      <BlockStack gap="200">
-        <Text variant="headingMd">{title}</Text>
-        <Text variant="heading2xl">{value}</Text>
-      </BlockStack>
-    </Card>
   );
 }
