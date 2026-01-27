@@ -98,13 +98,17 @@ export async function loader({ request }) {
     return acc;
   }, {}));
 
-  // Top Performing Products
+  // Top Performing Products with images
   const productPerformance = allRecords.reduce((acc, curr) => {
     if (!curr.productTitle || curr.productTitle === 'Unknown Product') return acc;
     
-    if (!acc[curr.productTitle]) {
-      acc[curr.productTitle] = {
+    const key = `${curr.productTitle}_${curr.productId}`;
+    
+    if (!acc[key]) {
+      acc[key] = {
         productTitle: curr.productTitle,
+        productId: curr.productId,
+        variantId: curr.variantId,
         requests: 0,
         sent: 0,
         opened: 0,
@@ -113,18 +117,47 @@ export async function loader({ request }) {
       };
     }
     
-    acc[curr.productTitle].requests++;
-    if (curr.notified) acc[curr.productTitle].sent++;
-    if (curr.opened) acc[curr.productTitle].opened++;
-    if (curr.clicked) acc[curr.productTitle].clicked++;
-    if (curr.purchased) acc[curr.productTitle].purchased++;
+    acc[key].requests++;
+    if (curr.notified) acc[key].sent++;
+    if (curr.opened) acc[key].opened++;
+    if (curr.clicked) acc[key].clicked++;
+    if (curr.purchased) acc[key].purchased++;
     
     return acc;
   }, {});
 
-  const topProducts = Object.values(productPerformance)
+  const topProductsRaw = Object.values(productPerformance)
     .sort((a, b) => b.requests - a.requests)
     .slice(0, 5);
+
+  // Fetch product images for top products
+  const topProducts = await Promise.all(
+    topProductsRaw.map(async (product) => {
+      try {
+        const response = await admin.graphql(`
+          query {
+            productVariant(id: "gid://shopify/ProductVariant/${product.variantId}") {
+              product {
+                featuredImage {
+                  url
+                }
+              }
+            }
+          }
+        `);
+        const { data } = await response.json();
+        return {
+          ...product,
+          image: data?.productVariant?.product?.featuredImage?.url || 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png'
+        };
+      } catch {
+        return {
+          ...product,
+          image: 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png'
+        };
+      }
+    })
+  );
 
   return json({ 
     stats, 
@@ -153,7 +186,7 @@ export default function Dashboard() {
   ];
 
   const funnelSteps = [
-    { label: 'Request', val: stats.total, pct: 100 },
+    { label: 'Request', val: stats.total, pct: stats.total > 0 ? 100 : 0 },
     { label: 'Sent', val: stats.sent, pct: stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0 },
     { label: 'Opened', val: stats.opened, pct: stats.total > 0 ? Math.round((stats.opened / stats.total) * 100) : 0 },
     { label: 'Clicked', val: stats.clicked, pct: stats.total > 0 ? Math.round((stats.clicked / stats.total) * 100) : 0 },
@@ -261,42 +294,57 @@ export default function Dashboard() {
               <table className="w-full">
                 <thead className="bg-gray-50/50 text-[10px] uppercase text-gray-400 font-bold tracking-widest">
                   <tr>
-                    <th className="px-6 py-3 text-left">Product Name</th>
+                    <th className="px-6 py-3 text-left">Product</th>
                     <th className="px-6 py-3 text-center">Requests</th>
                     <th className="px-6 py-3 text-center">Sent</th>
                     <th className="px-6 py-3 text-center">Opened</th>
                     <th className="px-6 py-3 text-center">Clicked</th>
                     <th className="px-6 py-3 text-center">Purchased</th>
-                    <th className="px-6 py-3 text-center">Open Rate</th>
-                    <th className="px-6 py-3 text-center">Click Rate</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {topProducts.map((product, idx) => {
-                    const productOpenRate = product.sent > 0 ? Math.round((product.opened / product.sent) * 100) : 0;
-                    const productClickRate = product.opened > 0 ? Math.round((product.clicked / product.opened) * 100) : 0;
-                    
-                    return (
-                      <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4 font-medium text-gray-700">{product.productTitle}</td>
-                        <td className="px-6 py-4 text-center font-bold text-blue-600">{product.requests}</td>
-                        <td className="px-6 py-4 text-center font-bold text-green-600">{product.sent}</td>
-                        <td className="px-6 py-4 text-center font-bold text-purple-600">{product.opened}</td>
-                        <td className="px-6 py-4 text-center font-bold text-amber-600">{product.clicked}</td>
-                        <td className="px-6 py-4 text-center font-bold text-indigo-600">{product.purchased}</td>
-                        <td className="px-6 py-4 text-center">
-                          <span className="px-2 py-1 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">
-                            {productOpenRate}%
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className="px-2 py-1 bg-amber-50 text-amber-600 rounded-full text-xs font-bold">
-                            {productClickRate}%
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {topProducts.map((product, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <img 
+                            src={product.image} 
+                            alt={product.productTitle}
+                            className="w-12 h-12 rounded-lg object-cover border border-gray-100"
+                            onError={(e) => {
+                              e.target.src = 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png';
+                            }}
+                          />
+                          <span className="font-medium text-gray-700">{product.productTitle}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full text-xs font-bold">
+                          {product.requests}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="px-3 py-1.5 bg-green-50 text-green-600 rounded-full text-xs font-bold">
+                          {product.sent}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="px-3 py-1.5 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">
+                          {product.opened}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full text-xs font-bold">
+                          {product.clicked}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold">
+                          {product.purchased}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
