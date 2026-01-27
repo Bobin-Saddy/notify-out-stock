@@ -89,3 +89,22 @@ model AppSettings {
   enablePriceDropAlerts Boolean @default(true)   // ADD THIS
   priceDropThreshold    Int     @default(5)      // ADD THIS - minimum % drop
 }
+
+model Wishlist {
+  id            Int      @id @default(autoincrement())
+  shop          String
+  email         String
+  productId     String
+  variantId     String
+  productTitle  String
+  variantTitle  String?
+  productImage  String?
+  productHandle String?
+  price         Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([shop, email, productId])
+  @@index([shop, email])
+  @@index([productId])
+}
