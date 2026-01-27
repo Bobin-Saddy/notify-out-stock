@@ -1,6 +1,6 @@
 // File: app/routes/app.subscribers.jsx
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate, Form } from "react-router";
+import { useLoaderData, useNavigate, Form, useActionData, useSubmit } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
@@ -19,7 +19,7 @@ import {
   Banner,
   Box,
 } from "@shopify/polaris";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // Loader: Fetch all subscribers with detailed logging
 export const loader = async ({ request }) => {
@@ -96,10 +96,9 @@ export const action = async ({ request }) => {
       console.log(`📊 Exporting ${subscribers.length} subscribers`);
 
       if (subscribers.length === 0) {
-        return new Response("No subscribers to export", {
-          status: 200,
-          headers: { "Content-Type": "text/plain" },
-        });
+        return json({ 
+          error: "No subscribers to export" 
+        }, { status: 400 });
       }
 
       // Generate CSV with proper escaping
@@ -123,7 +122,7 @@ export const action = async ({ request }) => {
         sub.email || "",
         sub.productTitle || "",
         sub.variantTitle || "",
-        sub.subscribedPrice != null ? `$${Number(sub.subscribedPrice).toFixed(2)}` : "",
+        sub.subscribedPrice != null ? `${Number(sub.subscribedPrice).toFixed(2)}` : "",
         sub.variantId || "",
         sub.inventoryItemId || "",
         sub.notified ? "Yes" : "No",
@@ -150,12 +149,11 @@ export const action = async ({ request }) => {
 
       console.log("✅ CSV generated successfully");
 
-      return new Response(csvContent, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": `attachment; filename="subscribers-${timestamp}.csv"`,
-        },
+      // Return as blob URL in JSON for client-side download
+      return json({ 
+        success: true,
+        csv: csvContent,
+        filename: `subscribers-${timestamp}.csv`
       });
     }
 
@@ -168,10 +166,33 @@ export const action = async ({ request }) => {
 
 export default function SubscribersPage() {
   const { subscribers, stats } = useLoaderData();
+  const actionData = useActionData();
   const navigate = useNavigate();
+  const submit = useSubmit();
 
   const [searchValue, setSearchValue] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+
+  // Handle CSV download when action data is received
+  useEffect(() => {
+    if (actionData?.success && actionData?.csv) {
+      const blob = new Blob([actionData.csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', actionData.filename);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      URL.revokeObjectURL(url);
+      
+      console.log("✅ CSV downloaded successfully");
+    }
+  }, [actionData]);
 
   const handleSearchChange = useCallback((value) => {
     setSearchValue(value);
@@ -249,16 +270,12 @@ export default function SubscribersPage() {
       primaryAction={{
         content: "Export CSV",
         onAction: () => {
-          // Trigger the form submission
-          document.getElementById('export-form').requestSubmit();
+          const formData = new FormData();
+          formData.append("action", "export");
+          submit(formData, { method: "POST" });
         },
       }}
     >
-      {/* Hidden form for CSV export */}
-      <Form method="POST" id="export-form" style={{ display: 'none' }}>
-        <input type="hidden" name="action" value="export" />
-      </Form>
-
       <Layout>
         {/* Warning Banner if product data is missing */}
         {hasProductDataIssues && (
