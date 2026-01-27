@@ -1,4 +1,3 @@
-// File: app/routes/app.subscribers.jsx
 import { json } from "@remix-run/node";
 import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -12,6 +11,7 @@ import {
   Button,
   Text,
   BlockStack,
+  InlineGrid,
   InlineStack,
   EmptyState,
   TextField,
@@ -28,9 +28,8 @@ export const loader = async ({ request }) => {
   const searchQuery = url.searchParams.get("search") || "";
   const filterStatus = url.searchParams.get("status") || "all";
 
-  // Build where clause
   const whereClause = {
-    shop: shop,
+    shop,
     ...(searchQuery && {
       OR: [
         { email: { contains: searchQuery, mode: "insensitive" } },
@@ -55,7 +54,7 @@ export const loader = async ({ request }) => {
     purchased: await prisma.backInStock.count({ where: { shop, purchased: true } }),
   };
 
-  return json({ subscribers, stats, shop });
+  return json({ subscribers, stats });
 };
 
 // Action: Handle CSV export
@@ -72,7 +71,6 @@ export const action = async ({ request }) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // Generate CSV
     const csvHeaders = [
       "ID",
       "Email",
@@ -127,14 +125,6 @@ export default function SubscribersPage() {
   const [searchValue, setSearchValue] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const handleSearchChange = useCallback((value) => {
-    setSearchValue(value);
-  }, []);
-
-  const handleFilterChange = useCallback((value) => {
-    setFilterStatus(value);
-  }, []);
-
   const handleSearch = useCallback(() => {
     const params = new URLSearchParams();
     if (searchValue) params.set("search", searchValue);
@@ -142,7 +132,7 @@ export default function SubscribersPage() {
     navigate(`?${params.toString()}`);
   }, [searchValue, filterStatus, navigate]);
 
-  const handleExport = async () => {
+  const handleExport = () => {
     const form = document.createElement("form");
     form.method = "POST";
     form.action = "/app/subscribers";
@@ -164,12 +154,12 @@ export default function SubscribersPage() {
     sub.productTitle || "N/A",
     sub.variantTitle || "N/A",
     sub.subscribedPrice ? `$${sub.subscribedPrice.toFixed(2)}` : "N/A",
-    <Badge tone={sub.notified ? "success" : "info"}>
+    <Badge tone={sub.notified ? "success" : "warning"}>
       {sub.notified ? "Notified" : "Pending"}
     </Badge>,
-    <Badge tone={sub.opened ? "success" : ""}>{sub.opened ? "Yes" : "No"}</Badge>,
-    <Badge tone={sub.clicked ? "success" : ""}>{sub.clicked ? "Yes" : "No"}</Badge>,
-    <Badge tone={sub.purchased ? "success" : ""}>{sub.purchased ? "Yes" : "No"}</Badge>,
+    <Badge tone={sub.opened ? "success" : "subdued"}>{sub.opened ? "Yes" : "No"}</Badge>,
+    <Badge tone={sub.clicked ? "success" : "subdued"}>{sub.clicked ? "Yes" : "No"}</Badge>,
+    <Badge tone={sub.purchased ? "success" : "subdued"}>{sub.purchased ? "Yes" : "No"}</Badge>,
     new Date(sub.createdAt).toLocaleDateString(),
   ]);
 
@@ -183,73 +173,38 @@ export default function SubscribersPage() {
   return (
     <Page
       title="Back in Stock Subscribers"
-      primaryAction={{
-        content: "Export CSV",
-        onAction: handleExport,
-      }}
+      primaryAction={{ content: "Export CSV", onAction: handleExport }}
     >
       <Layout>
-        {/* Stats Cards */}
+
+        {/* Stats */}
         <Layout.Section>
-          <InlineStack gap="400">
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Total Subscribers</Text>
-                <Text variant="heading2xl" as="p">{stats.total}</Text>
-              </BlockStack>
-            </Card>
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Pending</Text>
-                <Text variant="heading2xl" as="p">{stats.pending}</Text>
-              </BlockStack>
-            </Card>
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Notified</Text>
-                <Text variant="heading2xl" as="p">{stats.notified}</Text>
-              </BlockStack>
-            </Card>
-            <Card>
-              <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Purchased</Text>
-                <Text variant="heading2xl" as="p">{stats.purchased}</Text>
-              </BlockStack>
-            </Card>
-          </InlineStack>
+          <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
+            <Card><BlockStack gap="100"><Text as="h2" variant="headingSm">Total</Text><Text variant="heading2xl">{stats.total}</Text></BlockStack></Card>
+            <Card><BlockStack gap="100"><Text as="h2" variant="headingSm">Pending</Text><Text variant="heading2xl">{stats.pending}</Text></BlockStack></Card>
+            <Card><BlockStack gap="100"><Text as="h2" variant="headingSm">Notified</Text><Text variant="heading2xl">{stats.notified}</Text></BlockStack></Card>
+            <Card><BlockStack gap="100"><Text as="h2" variant="headingSm">Purchased</Text><Text variant="heading2xl">{stats.purchased}</Text></BlockStack></Card>
+          </InlineGrid>
         </Layout.Section>
 
         {/* Filters */}
         <Layout.Section>
           <Card>
-            <BlockStack gap="400">
-              <InlineStack gap="400" align="start">
-                <div style={{ flex: 1 }}>
-                  <TextField
-                    label="Search"
-                    value={searchValue}
-                    onChange={handleSearchChange}
-                    placeholder="Search by email or product"
-                    autoComplete="off"
-                  />
-                </div>
-                <div style={{ minWidth: "200px" }}>
-                  <Select
-                    label="Filter by status"
-                    options={filterOptions}
-                    value={filterStatus}
-                    onChange={handleFilterChange}
-                  />
-                </div>
-                <div style={{ paddingTop: "26px" }}>
-                  <Button onClick={handleSearch}>Search</Button>
-                </div>
-              </InlineStack>
-            </BlockStack>
+            <InlineStack gap="400" align="end">
+              <div style={{ flex: 1 }}>
+                <TextField label="Search" value={searchValue} onChange={setSearchValue} autoComplete="off" />
+              </div>
+              <div style={{ width: 200 }}>
+                <Select label="Status" options={filterOptions} value={filterStatus} onChange={setFilterStatus} />
+              </div>
+              <div style={{ paddingTop: 22 }}>
+                <Button onClick={handleSearch}>Apply</Button>
+              </div>
+            </InlineStack>
           </Card>
         </Layout.Section>
 
-        {/* Subscribers Table */}
+        {/* Table */}
         <Layout.Section>
           <Card padding="0">
             {subscribers.length === 0 ? (
@@ -257,39 +212,20 @@ export default function SubscribersPage() {
                 heading="No subscribers yet"
                 image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
               >
-                <p>Subscribers will appear here when customers sign up for back in stock notifications.</p>
+                <p>Customers will appear here after subscribing.</p>
               </EmptyState>
             ) : (
-              <DataTable
-                columnContentTypes={[
-                  "numeric",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                  "text",
-                ]}
-                headings={[
-                  "ID",
-                  "Email",
-                  "Product",
-                  "Variant",
-                  "Price",
-                  "Status",
-                  "Opened",
-                  "Clicked",
-                  "Purchased",
-                  "Date",
-                ]}
-                rows={rows}
-              />
+              <div style={{ overflowX: "auto" }}>
+                <DataTable
+                  columnContentTypes={["numeric","text","text","text","text","text","text","text","text","text"]}
+                  headings={["ID","Email","Product","Variant","Price","Status","Opened","Clicked","Purchased","Date"]}
+                  rows={rows}
+                />
+              </div>
             )}
           </Card>
         </Layout.Section>
+
       </Layout>
     </Page>
   );
