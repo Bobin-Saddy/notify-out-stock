@@ -1,13 +1,12 @@
 import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { AppProvider as ShopifyProvider } from "@shopify/shopify-app-react-router/react";
-import { AppProvider as PolarisProvider } from "@shopify/polaris";
-import enTranslations from "@shopify/polaris/locales/en.json";
+import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
 
+  // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
@@ -15,21 +14,18 @@ export default function App() {
   const { apiKey } = useLoaderData();
 
   return (
-    <ShopifyProvider embedded apiKey={apiKey}>
-      <PolarisProvider i18n={enTranslations}>
-        <s-app-nav>
-          <s-link href="/app/out-of-stock">Out of Stock</s-link>
-          <s-link href="/app/back-in-stock">Back in Stock</s-link>
-          <s-link href="/app/subscribers">Subscribers</s-link>
-        </s-app-nav>
-
-        <Outlet />
-      </PolarisProvider>
-    </ShopifyProvider>
+    <AppProvider embedded apiKey={apiKey}>
+      <s-app-nav>
+         <s-link href="/app/out-of-stock">Out of Stock</s-link>
+        <s-link href="/app/back-in-stock">Back in Stock</s-link>
+        <s-link href="/app/subscribers">Subscribers</s-link>
+      </s-app-nav>
+      <Outlet />
+    </AppProvider>
   );
 }
 
-// Shopify needs React Router to catch thrown responses so headers are included
+// Shopify needs React Router to catch some thrown responses, so that their headers are included in the response.
 export function ErrorBoundary() {
   return boundary.error(useRouteError());
 }
