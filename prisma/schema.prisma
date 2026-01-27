@@ -65,7 +65,6 @@ model BackInStock {
   opened          Boolean  @default(false)
   clicked         Boolean  @default(false)
   purchased       Boolean  @default(false)
-  priceAtSubscription String?
   subscribedPrice Float?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
