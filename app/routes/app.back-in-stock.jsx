@@ -21,19 +21,25 @@ export async function loader({ request }) {
 
   const dateFilterStart = new Date(Date.now() - parseInt(dateFilter) * 24 * 60 * 60 * 1000);
 
+  // Build where clause for filtered records
   const whereClause = {
     shop,
     createdAt: { gte: dateFilterStart },
-    ...(searchQuery && { email: { contains: searchQuery, mode: 'insensitive' } }),
-    ...(variantSearch && { variantId: { contains: variantSearch, mode: 'insensitive' } }),
+    ...(searchQuery && { 
+      OR: [
+        { email: { contains: searchQuery } },
+        { productTitle: { contains: searchQuery } }
+      ]
+    }),
+    ...(variantSearch && { variantId: { contains: variantSearch } }),
   };
 
   const [allRecords, recentSubscribers] = await Promise.all([
-    prisma.backInStock.findMany({ where: { shop, createdAt: { gte: dateFilterStart } } }),
+    prisma.backInStock.findMany({ where: whereClause }),
     prisma.backInStock.findMany({ where: whereClause, take: 10, orderBy: { createdAt: 'desc' } })
   ]);
 
-  // Real Counts
+  // Real Counts (not percentages)
   const stats = {
     total: allRecords.length,
     sent: allRecords.filter(r => r.notified).length,
@@ -42,23 +48,46 @@ export async function loader({ request }) {
     purchased: allRecords.filter(r => r.purchased).length,
   };
 
+  // Calculate delivery, open, click rates as percentages
+  const deliveryRate = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0;
+  const openRate = stats.sent > 0 ? Math.round((stats.opened / stats.sent) * 100) : 0;
+  const clickRate = stats.opened > 0 ? Math.round((stats.clicked / stats.opened) * 100) : 0;
+  const conversionRate = stats.clicked > 0 ? Math.round((stats.purchased / stats.clicked) * 100) : 0;
+
   // Enriched Table Data
   const enrichedSubscribers = await Promise.all(
     recentSubscribers.map(async (sub) => {
+      // If productTitle already exists in DB, use it
+      if (sub.productTitle && sub.productTitle !== 'Unknown Product') {
+        return sub;
+      }
+
+      // Otherwise, fetch from Shopify
       try {
         const response = await admin.graphql(`
-          query { productVariant(id: "gid://shopify/ProductVariant/${sub.variantId}") { 
-            displayName product { title } 
-          } }`);
+          query { 
+            productVariant(id: "gid://shopify/ProductVariant/${sub.variantId}") { 
+              displayName 
+              product { title } 
+            } 
+          }`);
         const { data } = await response.json();
-        return { ...sub, 
-          productTitle: data?.productVariant?.product?.title || 'Unknown Product',
-          variantTitle: data?.productVariant?.displayName || 'N/A'
+        return { 
+          ...sub, 
+          productTitle: data?.productVariant?.product?.title || sub.productTitle || 'Unknown Product',
+          variantTitle: data?.productVariant?.displayName || sub.variantTitle || 'N/A'
         };
-      } catch { return { ...sub, productTitle: 'Deleted Product', variantTitle: 'N/A' }; }
+      } catch { 
+        return { 
+          ...sub, 
+          productTitle: sub.productTitle || 'Deleted Product', 
+          variantTitle: sub.variantTitle || 'N/A' 
+        }; 
+      }
     })
   );
 
+  // Trend Data with Clicked added
   const trendData = Object.values(allRecords.reduce((acc, curr) => {
     const date = new Date(curr.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     if (!acc[date]) acc[date] = { name: date, Requests: 0, Sent: 0, Opened: 0, Clicked: 0 };
@@ -69,31 +98,66 @@ export async function loader({ request }) {
     return acc;
   }, {}));
 
-  return json({ stats, subscribers: enrichedSubscribers, trendData, filters: { searchQuery, variantSearch, dateFilter } });
+  // Top Performing Products
+  const productPerformance = allRecords.reduce((acc, curr) => {
+    if (!curr.productTitle || curr.productTitle === 'Unknown Product') return acc;
+    
+    if (!acc[curr.productTitle]) {
+      acc[curr.productTitle] = {
+        productTitle: curr.productTitle,
+        requests: 0,
+        sent: 0,
+        opened: 0,
+        clicked: 0,
+        purchased: 0,
+      };
+    }
+    
+    acc[curr.productTitle].requests++;
+    if (curr.notified) acc[curr.productTitle].sent++;
+    if (curr.opened) acc[curr.productTitle].opened++;
+    if (curr.clicked) acc[curr.productTitle].clicked++;
+    if (curr.purchased) acc[curr.productTitle].purchased++;
+    
+    return acc;
+  }, {});
+
+  const topProducts = Object.values(productPerformance)
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 5);
+
+  return json({ 
+    stats, 
+    deliveryRate,
+    openRate,
+    clickRate,
+    conversionRate,
+    subscribers: enrichedSubscribers, 
+    trendData, 
+    topProducts,
+    filters: { searchQuery, variantSearch, dateFilter } 
+  });
 }
 
 export default function Dashboard() {
-  const { stats, subscribers, trendData, filters } = useLoaderData();
+  const { stats, deliveryRate, openRate, clickRate, conversionRate, subscribers, trendData, topProducts, filters } = useLoaderData();
   const submit = useSubmit();
-
-  // Funnel logic: Always compare to total requests
-  const getPct = (val) => (stats.total > 0 ? Math.round((val / stats.total) * 100) : 0);
 
   const metrics = [
     { label: 'Total Requests', val: stats.total, icon: Mail, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Notifications Sent', val: stats.sent, icon: Bell, color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Delivery Rate', val: getPct(stats.sent) + '%', icon: CheckCircle2, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-    { label: 'Open Rate', val: getPct(stats.opened) + '%', icon: Eye, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { label: 'Click Rate', val: getPct(stats.clicked) + '%', icon: MousePointer2, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { label: 'Conversion Rate', val: getPct(stats.purchased) + '%', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Delivery Rate', val: deliveryRate + '%', icon: CheckCircle2, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+    { label: 'Emails Opened', val: stats.opened, icon: Eye, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Links Clicked', val: stats.clicked, icon: MousePointer2, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Conversion Rate', val: conversionRate + '%', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
   ];
 
   const funnelSteps = [
     { label: 'Request', val: stats.total, pct: 100 },
-    { label: 'Sent', val: stats.sent, pct: getPct(stats.sent) },
-    { label: 'Opened', val: stats.opened, pct: getPct(stats.opened) },
-    { label: 'Clicked', val: stats.clicked, pct: getPct(stats.clicked) },
-    { label: 'Purchased', val: stats.purchased, pct: getPct(stats.purchased) },
+    { label: 'Sent', val: stats.sent, pct: stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0 },
+    { label: 'Opened', val: stats.opened, pct: stats.total > 0 ? Math.round((stats.opened / stats.total) * 100) : 0 },
+    { label: 'Clicked', val: stats.clicked, pct: stats.total > 0 ? Math.round((stats.clicked / stats.total) * 100) : 0 },
+    { label: 'Purchased', val: stats.purchased, pct: stats.total > 0 ? Math.round((stats.purchased / stats.total) * 100) : 0 },
   ];
 
   return (
@@ -113,19 +177,20 @@ export default function Dashboard() {
         </div>
 
         {/* Filters */}
-        <Form onChange={(e) => submit(e.currentTarget)} className="grid grid-cols-4 gap-4">
+        <Form method="get" onChange={(e) => submit(e.currentTarget)} className="grid grid-cols-4 gap-4">
           <select name="dateRange" defaultValue={filters.dateFilter} className="bg-white border border-gray-200 p-2.5 rounded-xl text-sm outline-none shadow-sm">
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
           </select>
           <div className="relative col-span-1">
             <Search className="absolute left-3 top-3 text-gray-400" size={16} />
-            <input name="search" placeholder="Product Search" defaultValue={filters.searchQuery} className="w-full bg-white border border-gray-200 p-2.5 pl-10 rounded-xl text-sm outline-none shadow-sm" />
+            <input name="search" placeholder="Search Email/Product" defaultValue={filters.searchQuery} className="w-full bg-white border border-gray-200 p-2.5 pl-10 rounded-xl text-sm outline-none shadow-sm" />
           </div>
-          <input name="variant" placeholder="Variant Search" defaultValue={filters.variantSearch} className="bg-white border border-gray-200 p-2.5 rounded-xl text-sm outline-none shadow-sm" />
-          <select className="bg-white border border-gray-200 p-2.5 rounded-xl text-sm outline-none shadow-sm">
-            <option>All Channels</option>
-          </select>
+          <input name="variant" placeholder="Variant ID Search" defaultValue={filters.variantSearch} className="bg-white border border-gray-200 p-2.5 rounded-xl text-sm outline-none shadow-sm" />
+          <button type="submit" className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
+            Apply Filters
+          </button>
         </Form>
 
         {/* 6 Grid Metrics */}
@@ -154,9 +219,10 @@ export default function Dashboard() {
                   <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
                   <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)'}} />
                   <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{paddingTop: '20px'}}/>
-                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={12} />
-                  <Bar name="Sent" dataKey="Sent" fill="#10b981" radius={[4, 4, 0, 0]} barSize={12} />
-                  <Bar name="Opened" dataKey="Opened" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={12} />
+                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={10} />
+                  <Bar name="Sent" dataKey="Sent" fill="#10b981" radius={[4, 4, 0, 0]} barSize={10} />
+                  <Bar name="Opened" dataKey="Opened" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={10} />
+                  <Bar name="Clicked" dataKey="Clicked" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={10} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -190,13 +256,59 @@ export default function Dashboard() {
         {/* Top Performing Products Section */}
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
           <h3 className="font-bold mb-4 text-gray-800">Top Performing Products</h3>
-          <div className="border border-dashed border-gray-200 rounded-2xl py-12 flex flex-col items-center justify-center text-center">
-            <div className="bg-gray-50 p-4 rounded-full mb-3 text-gray-300">
-               <Package size={32} />
+          {topProducts.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50/50 text-[10px] uppercase text-gray-400 font-bold tracking-widest">
+                  <tr>
+                    <th className="px-6 py-3 text-left">Product Name</th>
+                    <th className="px-6 py-3 text-center">Requests</th>
+                    <th className="px-6 py-3 text-center">Sent</th>
+                    <th className="px-6 py-3 text-center">Opened</th>
+                    <th className="px-6 py-3 text-center">Clicked</th>
+                    <th className="px-6 py-3 text-center">Purchased</th>
+                    <th className="px-6 py-3 text-center">Open Rate</th>
+                    <th className="px-6 py-3 text-center">Click Rate</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {topProducts.map((product, idx) => {
+                    const productOpenRate = product.sent > 0 ? Math.round((product.opened / product.sent) * 100) : 0;
+                    const productClickRate = product.opened > 0 ? Math.round((product.clicked / product.opened) * 100) : 0;
+                    
+                    return (
+                      <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-6 py-4 font-medium text-gray-700">{product.productTitle}</td>
+                        <td className="px-6 py-4 text-center font-bold text-blue-600">{product.requests}</td>
+                        <td className="px-6 py-4 text-center font-bold text-green-600">{product.sent}</td>
+                        <td className="px-6 py-4 text-center font-bold text-purple-600">{product.opened}</td>
+                        <td className="px-6 py-4 text-center font-bold text-amber-600">{product.clicked}</td>
+                        <td className="px-6 py-4 text-center font-bold text-indigo-600">{product.purchased}</td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="px-2 py-1 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">
+                            {productOpenRate}%
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="px-2 py-1 bg-amber-50 text-amber-600 rounded-full text-xs font-bold">
+                            {productClickRate}%
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            <p className="text-sm font-bold text-gray-800">No data found</p>
-            <p className="text-xs text-gray-500">Data will appear here once customers request a back-in-stock notification.</p>
-          </div>
+          ) : (
+            <div className="border border-dashed border-gray-200 rounded-2xl py-12 flex flex-col items-center justify-center text-center">
+              <div className="bg-gray-50 p-4 rounded-full mb-3 text-gray-300">
+                <Package size={32} />
+              </div>
+              <p className="text-sm font-bold text-gray-800">No data found</p>
+              <p className="text-xs text-gray-500">Data will appear here once customers request a back-in-stock notification.</p>
+            </div>
+          )}
         </div>
 
         {/* Table */}
@@ -232,7 +344,7 @@ export default function Dashboard() {
                 </tr>
               )) : (
                 <tr>
-                   <td colSpan="5" className="px-8 py-10 text-center text-gray-400 italic text-sm">No recent activity found.</td>
+                  <td colSpan="5" className="px-8 py-10 text-center text-gray-400 italic text-sm">No recent activity found.</td>
                 </tr>
               )}
             </tbody>
