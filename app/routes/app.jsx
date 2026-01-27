@@ -1,12 +1,14 @@
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+// File: app/routes/app.jsx
+import { Outlet, useLoaderData, useRouteError } from "@remix-run/react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { AppProvider as ShopifyAppProvider } from "@shopify/shopify-app-react-router/react";
+import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import "@shopify/polaris/build/esm/styles.css";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
 
-  // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
@@ -14,14 +16,16 @@ export default function App() {
   const { apiKey } = useLoaderData();
 
   return (
-    <AppProvider embedded apiKey={apiKey}>
-      <s-app-nav>
-         <s-link href="/app/out-of-stock">Out of Stock</s-link>
-        <s-link href="/app/back-in-stock">Back in Stock</s-link>
-        <s-link href="/app/subscribers">Subscribers</s-link>
-      </s-app-nav>
-      <Outlet />
-    </AppProvider>
+    <ShopifyAppProvider embedded apiKey={apiKey}>
+      <PolarisAppProvider i18n={{}}>
+        <s-app-nav>
+          <s-link href="/app/out-of-stock">Out of Stock</s-link>
+          <s-link href="/app/back-in-stock">Back in Stock</s-link>
+          <s-link href="/app/subscribers">Subscribers</s-link>
+        </s-app-nav>
+        <Outlet />
+      </PolarisAppProvider>
+    </ShopifyAppProvider>
   );
 }
 
