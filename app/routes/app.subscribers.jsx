@@ -173,15 +173,21 @@ export default function SubscribersPage() {
   const [searchValue, setSearchValue] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  // Handle CSV download when action data is received
+  // Handle Excel download when action data is received
   useEffect(() => {
     if (actionData?.success && actionData?.csv) {
-      const blob = new Blob([actionData.csv], { type: 'text/csv;charset=utf-8;' });
+      // Add BOM for proper Excel UTF-8 encoding
+      const BOM = '\uFEFF';
+      const csvWithBOM = BOM + actionData.csv;
+      
+      const blob = new Blob([csvWithBOM], { 
+        type: 'application/vnd.ms-excel;charset=utf-8;' 
+      });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       
       link.setAttribute('href', url);
-      link.setAttribute('download', actionData.filename);
+      link.setAttribute('download', actionData.filename.replace('.csv', '.xls'));
       link.style.visibility = 'hidden';
       
       document.body.appendChild(link);
@@ -190,7 +196,7 @@ export default function SubscribersPage() {
       
       URL.revokeObjectURL(url);
       
-      console.log("✅ CSV downloaded successfully");
+      console.log("✅ Excel file downloaded successfully");
     }
   }, [actionData]);
 
@@ -268,7 +274,7 @@ export default function SubscribersPage() {
     <Page
       title="Back in Stock Subscribers"
       primaryAction={{
-        content: "Export CSV",
+        content: "Export to Excel",
         onAction: () => {
           const formData = new FormData();
           formData.append("action", "export");
