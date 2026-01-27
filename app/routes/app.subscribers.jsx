@@ -1,6 +1,6 @@
 // File: app/routes/app.subscribers.jsx
 import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate, Form } from "react-router";
+import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
@@ -16,10 +16,12 @@ import {
   EmptyState,
   TextField,
   Select,
+  Banner,
+  Box,
 } from "@shopify/polaris";
 import { useState, useCallback } from "react";
 
-// Loader: Fetch all subscribers
+// Loader: Fetch all subscribers with detailed logging
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
@@ -48,11 +50,27 @@ export const loader = async ({ request }) => {
   });
 
   console.log(`📊 Loaded ${subscribers.length} subscribers for shop: ${shop}`);
+  
+  // Debug: Log first subscriber to check data
+  if (subscribers.length > 0) {
+    console.log("🔍 Sample subscriber data:", {
+      id: subscribers[0].id,
+      email: subscribers[0].email,
+      productTitle: subscribers[0].productTitle,
+      variantTitle: subscribers[0].variantTitle,
+      subscribedPrice: subscribers[0].subscribedPrice,
+      variantId: subscribers[0].variantId,
+      inventoryItemId: subscribers[0].inventoryItemId,
+    });
+  }
 
   const stats = {
     total: await prisma.backInStock.count({ where: { shop } }),
     notified: await prisma.backInStock.count({ where: { shop, notified: true } }),
     pending: await prisma.backInStock.count({ where: { shop, notified: false } }),
+    withProductInfo: await prisma.backInStock.count({ 
+      where: { shop, productTitle: { not: null } } 
+    }),
   };
 
   return json({ subscribers, stats, shop });
@@ -115,7 +133,6 @@ export const action = async ({ request }) => {
         sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : "",
       ]);
 
-      // Properly escape CSV fields
       const escapeCSVField = (field) => {
         const stringField = String(field);
         if (stringField.includes(",") || stringField.includes('"') || stringField.includes("\n")) {
@@ -171,39 +188,66 @@ export default function SubscribersPage() {
     navigate(`?${params.toString()}`);
   }, [searchValue, filterStatus, navigate]);
 
+  // Check if we have product data issues
+  const hasProductDataIssues = stats.withProductInfo < stats.total;
+
   const rows = subscribers.map((sub) => [
     sub.id,
     sub.email,
-    sub.productTitle || <Text tone="subdued">No product title</Text>,
-    sub.variantTitle || <Text tone="subdued">Default variant</Text>,
-    sub.subscribedPrice != null 
-      ? `$${Number(sub.subscribedPrice).toFixed(2)}` 
-      : <Text tone="subdued">N/A</Text>,
-    <Badge tone={sub.notified ? "success" : "info"}>
-      {sub.notified ? "✅ Notified" : "⏳ Pending"}
+    sub.productTitle ? (
+      <Box>
+        <Text fontWeight="semibold">{sub.productTitle}</Text>
+        {sub.variantTitle && (
+          <Text tone="subdued" variant="bodySm">
+            {sub.variantTitle}
+          </Text>
+        )}
+      </Box>
+    ) : (
+      <Text tone="critical">No product data</Text>
+    ),
+    sub.subscribedPrice != null ? (
+      <Text fontWeight="semibold">
+        ${Number(sub.subscribedPrice).toFixed(2)}
+      </Text>
+    ) : (
+      <Text tone="subdued">—</Text>
+    ),
+    <Badge tone={sub.notified ? "success" : "attention"}>
+      {sub.notified ? "Notified" : "Pending"}
     </Badge>,
-    <Badge tone={sub.opened ? "success" : ""}>{sub.opened ? "Yes" : "No"}</Badge>,
-    <Badge tone={sub.clicked ? "success" : ""}>{sub.clicked ? "Yes" : "No"}</Badge>,
-    sub.createdAt 
-      ? new Date(sub.createdAt).toLocaleDateString('en-US', {
+    <Badge tone={sub.opened ? "success" : undefined}>
+      {sub.opened ? "✓ Opened" : "Not opened"}
+    </Badge>,
+    <Badge tone={sub.clicked ? "success" : undefined}>
+      {sub.clicked ? "✓ Clicked" : "Not clicked"}
+    </Badge>,
+    sub.createdAt ? (
+      <Text variant="bodySm">
+        {new Date(sub.createdAt).toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'short',
-          day: 'numeric'
-        })
-      : "N/A",
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })}
+      </Text>
+    ) : (
+      "—"
+    ),
   ]);
 
   const filterOptions = [
-    { label: "All", value: "all" },
-    { label: "Pending", value: "pending" },
-    { label: "Notified", value: "notified" },
+    { label: "All Subscribers", value: "all" },
+    { label: "Pending Notifications", value: "pending" },
+    { label: "Already Notified", value: "notified" },
   ];
 
   return (
     <Page
-      title="📬 Back in Stock Subscribers"
+      title="Back in Stock Subscribers"
       primaryAction={{
-        content: "📥 Export CSV",
+        content: "Export CSV",
         onAction: () => {
           const form = document.createElement("form");
           form.method = "POST";
@@ -222,25 +266,45 @@ export default function SubscribersPage() {
       }}
     >
       <Layout>
+        {/* Warning Banner if product data is missing */}
+        {hasProductDataIssues && (
+          <Layout.Section>
+            <Banner tone="warning" title="Missing Product Information">
+              <p>
+                Some subscribers ({stats.total - stats.withProductInfo} out of {stats.total}) 
+                don't have product information saved. This might be due to old subscriptions 
+                created before the product tracking feature was added. New subscriptions should 
+                capture this data automatically.
+              </p>
+            </Banner>
+          </Layout.Section>
+        )}
+
         {/* Stats Cards */}
         <Layout.Section>
-          <InlineStack gap="400">
+          <InlineStack gap="400" wrap={false}>
             <Card>
               <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Total Subscribers</Text>
+                <Text variant="bodyMd" tone="subdued">Total Subscribers</Text>
                 <Text variant="heading2xl" as="p">{stats.total}</Text>
               </BlockStack>
             </Card>
             <Card>
               <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Pending</Text>
-                <Text variant="heading2xl" as="p">{stats.pending}</Text>
+                <Text variant="bodyMd" tone="subdued">Pending</Text>
+                <Text variant="heading2xl" as="p" tone="warning">{stats.pending}</Text>
               </BlockStack>
             </Card>
             <Card>
               <BlockStack gap="200">
-                <Text variant="headingMd" as="h2">Notified</Text>
-                <Text variant="heading2xl" as="p">{stats.notified}</Text>
+                <Text variant="bodyMd" tone="subdued">Notified</Text>
+                <Text variant="heading2xl" as="p" tone="success">{stats.notified}</Text>
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="200">
+                <Text variant="bodyMd" tone="subdued">With Product Data</Text>
+                <Text variant="heading2xl" as="p">{stats.withProductInfo}</Text>
               </BlockStack>
             </Card>
           </InlineStack>
@@ -250,27 +314,29 @@ export default function SubscribersPage() {
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
-              <InlineStack gap="400" align="start">
-                <div style={{ flex: 1 }}>
+              <InlineStack gap="400" align="start" blockAlign="end" wrap={false}>
+                <Box width="100%">
                   <TextField
                     label="Search"
                     value={searchValue}
                     onChange={handleSearchChange}
-                    placeholder="Search by email or product"
+                    placeholder="Search by email or product name"
                     autoComplete="off"
+                    clearButton
+                    onClearButtonClick={() => setSearchValue("")}
                   />
-                </div>
-                <div style={{ minWidth: "200px" }}>
+                </Box>
+                <Box minWidth="200px">
                   <Select
                     label="Filter by status"
                     options={filterOptions}
                     value={filterStatus}
                     onChange={handleFilterChange}
                   />
-                </div>
-                <div style={{ paddingTop: "26px" }}>
-                  <Button onClick={handleSearch}>🔍 Search</Button>
-                </div>
+                </Box>
+                <Button variant="primary" onClick={handleSearch}>
+                  Search
+                </Button>
               </InlineStack>
             </BlockStack>
           </Card>
@@ -281,10 +347,14 @@ export default function SubscribersPage() {
           <Card padding="0">
             {subscribers.length === 0 ? (
               <EmptyState
-                heading="No subscribers yet"
+                heading="No subscribers found"
                 image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
               >
-                <p>Subscribers will appear here when customers sign up for back in stock notifications.</p>
+                <p>
+                  {searchValue || filterStatus !== "all" 
+                    ? "Try adjusting your search or filters."
+                    : "Subscribers will appear here when customers sign up for back in stock notifications."}
+                </p>
               </EmptyState>
             ) : (
               <DataTable
@@ -297,20 +367,19 @@ export default function SubscribersPage() {
                   "text",
                   "text",
                   "text",
-                  "text",
                 ]}
                 headings={[
                   "ID",
                   "Email",
-                  "Product",
-                  "Variant",
-                  "Subscribed Price",
+                  "Product & Variant",
+                  "Price",
                   "Status",
-                  "Opened",
-                  "Clicked",
-                  "Date",
+                  "Email Opened",
+                  "Link Clicked",
+                  "Subscribed Date",
                 ]}
                 rows={rows}
+                hoverable
               />
             )}
           </Card>
