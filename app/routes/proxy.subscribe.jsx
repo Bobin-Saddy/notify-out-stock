@@ -16,16 +16,19 @@ export const action = async ({ request }) => {
   }
 
   try {
+    // 1. Authenticate the App Proxy request
     const { admin } = await authenticate.public.appProxy(request);
+    
     const body = await request.json();
     console.log("📧 RAW REQUEST BODY:", JSON.stringify(body, null, 2));
-
+    
     const { email, variantId, shop, productName, variantTitle, currentPrice, productId, inventoryItemId } = body;
 
     // ✅ Validate required fields
     if (!email || !variantId || !shop) {
+      console.error("❌ VALIDATION FAILED - Missing fields:", { email: !!email, variantId: !!variantId, shop: !!shop });
       return new Response(
-        JSON.stringify({ success: false, error: "Missing required fields" }),
+        JSON.stringify({ success: false, error: "Missing required fields: email, variantId, or shop" }), 
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -33,14 +36,27 @@ export const action = async ({ request }) => {
     // ✅ Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
+      console.error("❌ INVALID EMAIL FORMAT:", email);
       return new Response(
-        JSON.stringify({ success: false, error: "Invalid email format" }),
+        JSON.stringify({ success: false, error: "Invalid email format" }), 
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // ✅ Fetch LIVE variant details from Shopify GraphQL
-    console.log("🔍 FETCHING LIVE VARIANT DETAILS...");
+    console.log("✅ BASIC VALIDATION PASSED");
+    console.log("📦 RECEIVED DATA:", {
+      email,
+      variantId,
+      shop,
+      productName,
+      variantTitle,
+      currentPrice,
+      productId,
+      inventoryItemId
+    });
+
+    // 2. Fetch FULL variant details using GraphQL
+    console.log("🔍 FETCHING VARIANT DETAILS FROM SHOPIFY...");
     const response = await admin.graphql(`
       query getVariantDetails($id: ID!) {
         productVariant(id: $id) {
@@ -48,10 +64,7 @@ export const action = async ({ request }) => {
           displayName
           title
           price
-          available
           inventoryQuantity
-          inventoryManagement
-          inventoryPolicy
           inventoryItem {
             id
           }
@@ -67,71 +80,57 @@ export const action = async ({ request }) => {
     });
 
     const variantData = await response.json();
-
+    console.log("📊 GRAPHQL RESPONSE:", JSON.stringify(variantData, null, 2));
+    
     if (variantData.errors) {
       console.error("❌ GRAPHQL ERROR:", JSON.stringify(variantData.errors, null, 2));
       return new Response(
-        JSON.stringify({ success: false, error: "Failed to fetch variant from Shopify" }),
+        JSON.stringify({ success: false, error: "Failed to fetch variant details from Shopify" }), 
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
     const variant = variantData.data?.productVariant;
-
+    
     if (!variant) {
+      console.error("❌ VARIANT NOT FOUND IN SHOPIFY:", variantId);
       return new Response(
-        JSON.stringify({ success: false, error: "Variant not found" }),
+        JSON.stringify({ success: false, error: "Variant not found in Shopify" }), 
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // ✅ REAL-TIME STOCK CHECK — Server side pe verify karo
-    // Shopify GraphQL se live inventoryQuantity aata hai
-    const isShopifyManaged = variant.inventoryManagement === "SHOPIFY";
-    const liveQty = variant.inventoryQuantity ?? 0;
-    const isOutOfStock = isShopifyManaged
-      ? liveQty <= 0
-      : !variant.available;
-
-    console.log("📊 LIVE STOCK CHECK:", {
-      inventoryManagement: variant.inventoryManagement,
-      inventoryQuantity: liveQty,
-      available: variant.available,
-      isOutOfStock
-    });
-
-    // ❌ Agar product IN STOCK hai toh subscription mat banao
-    if (!isOutOfStock) {
-      console.log("⚠️ PRODUCT IS IN STOCK — Subscription rejected");
-      return new Response(
-        JSON.stringify({
-          success: false,
-          message: "This product is currently in stock. No need to subscribe!"
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("✅ CONFIRMED OUT OF STOCK — Proceeding with subscription");
-
-    // Extract IDs
+    // Extract data from GraphQL response
     const rawInventoryId = variant.inventoryItem?.id;
     const finalInventoryItemId = inventoryItemId || (rawInventoryId ? rawInventoryId.split('/').pop() : null);
-
+    
     const rawProductId = variant.product?.id;
     const finalProductId = productId || (rawProductId ? rawProductId.split('/').pop() : null);
-
+    
     const finalProductTitle = productName || variant.product?.title || "Unknown Product";
     const finalVariantTitle = variantTitle || variant.title || variant.displayName || "Default";
-    const finalSubscribedPrice = currentPrice
-      ? parseFloat(currentPrice)
+    
+    // Get price - prefer frontend price, fallback to GraphQL
+    const finalSubscribedPrice = currentPrice 
+      ? parseFloat(currentPrice) 
       : (variant.price ? parseFloat(variant.price) : 0);
 
-    // ✅ Check if already subscribed
+    console.log("✅ PROCESSED VARIANT DATA:", {
+      variantId,
+      finalInventoryItemId,
+      finalProductId,
+      finalProductTitle,
+      finalVariantTitle,
+      finalSubscribedPrice,
+      inventoryQty: variant.inventoryQuantity
+    });
+
+    // 3. Check if already subscribed
+    console.log("🔍 CHECKING FOR EXISTING SUBSCRIPTION...");
     const existing = await prisma.backInStock.findFirst({
       where: {
-        email,
-        shop,
+        email: email,
+        shop: shop,
         OR: [
           { variantId: String(variantId) },
           ...(finalInventoryItemId ? [{ inventoryItemId: String(finalInventoryItemId) }] : [])
@@ -140,38 +139,54 @@ export const action = async ({ request }) => {
     });
 
     if (existing) {
-      console.log("⚠️ ALREADY SUBSCRIBED:", email);
+      console.log("⚠️ ALREADY SUBSCRIBED:", email, "for variant:", variantId);
       return new Response(
-        JSON.stringify({
-          success: true,
-          message: "You're already subscribed to this product!"
-        }),
+        JSON.stringify({ 
+          success: true, 
+          message: "You're already subscribed to this product!" 
+        }), 
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // ✅ Create subscription
+    console.log("✅ NO EXISTING SUBSCRIPTION FOUND");
+
+    // 4. Create subscription with ALL fields
     const subscriptionData = {
-      email,
+      email: email,
       variantId: String(variantId),
       inventoryItemId: finalInventoryItemId ? String(finalInventoryItemId) : null,
       productId: finalProductId ? String(finalProductId) : null,
       productTitle: finalProductTitle,
       variantTitle: finalVariantTitle,
       subscribedPrice: finalSubscribedPrice,
-      shop,
+      shop: shop,
       notified: false,
       createdAt: new Date()
     };
 
-    const subscription = await prisma.backInStock.create({ data: subscriptionData });
+    console.log("💾 CREATING SUBSCRIPTION WITH DATA:");
+    console.log(JSON.stringify(subscriptionData, null, 2));
 
-    console.log("✅ SUBSCRIPTION CREATED:", subscription.id);
+    const subscription = await prisma.backInStock.create({
+      data: subscriptionData,
+    });
+
+    console.log("✅ SUBSCRIPTION CREATED SUCCESSFULLY!");
+    console.log("📋 SAVED SUBSCRIPTION:", {
+      id: subscription.id,
+      email: subscription.email,
+      productTitle: subscription.productTitle,
+      variantTitle: subscription.variantTitle,
+      subscribedPrice: subscription.subscribedPrice,
+      variantId: subscription.variantId,
+      inventoryItemId: subscription.inventoryItemId
+    });
     console.log("=".repeat(80));
 
     return new Response(
-      JSON.stringify({
-        success: true,
+      JSON.stringify({ 
+        success: true, 
         message: "Successfully subscribed! We'll notify you when it's back in stock.",
         data: {
           id: subscription.id,
@@ -179,19 +194,23 @@ export const action = async ({ request }) => {
           productTitle: subscription.productTitle,
           variantTitle: subscription.variantTitle
         }
-      }),
+      }), 
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
 
   } catch (err) {
-    console.error("❌ SUBSCRIBE ERROR:", err.message);
-    console.error(err.stack);
+    console.error("=".repeat(80));
+    console.error("❌ SUBSCRIBE ERROR:");
+    console.error("Error message:", err.message);
+    console.error("Error stack:", err.stack);
+    console.error("=".repeat(80));
+    
     return new Response(
-      JSON.stringify({
-        success: false,
+      JSON.stringify({ 
+        success: false, 
         error: "Failed to subscribe. Please try again.",
-        details: err.message
-      }),
+        details: err.message 
+      }), 
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
