@@ -174,15 +174,31 @@
   const emailInput = document.getElementById("bis-email");
   const messageEl = document.getElementById("bis-message");
 
-  function getCurrentVariant() {
-    return {{ product.selected_or_first_available_variant | json }};
-  }
+  let currentVariant = {{ product.selected_or_first_available_variant | json }};
+
+  // ✅ Listen to variant change (Shopify 2.0)
+  document.addEventListener('variant:change', function(event) {
+    currentVariant = event.detail.variant;
+    updateVariantButton();
+  });
+
+  // Fallback (some themes use different events)
+  document.addEventListener('change', function(e) {
+    if (e.target.name === 'id') {
+      const variantId = e.target.value;
+      fetch(window.location.pathname + '.js')
+        .then(res => res.json())
+        .then(product => {
+          currentVariant = product.variants.find(v => v.id == variantId);
+          updateVariantButton();
+        });
+    }
+  });
 
   function updateVariantButton() {
-    const v = getCurrentVariant();
-    if (!v) return;
+    if (!currentVariant) return;
 
-    if (v.available) {
+    if (currentVariant.available) {
       btn.style.display = "none";
       modal.style.display = "none";
       overlay.style.display = "none";
@@ -205,7 +221,6 @@
 
   document.addEventListener("DOMContentLoaded", updateVariantButton);
 
-  // Open modal
   btn.onclick = () => {
     modal.style.display = "block";
     overlay.style.display = "block";
@@ -214,15 +229,12 @@
     messageEl.className = "";
   };
 
-  // Close modal
   closeBtn.onclick = closeModal;
   overlay.onclick = closeModal;
 
-  // Submit form
   submitBtn.onclick = async () => {
     const email = emailInput.value.trim();
-    
-    // Validate email
+
     if (!email) {
       showMessage("Please enter your email", true);
       return;
@@ -234,85 +246,61 @@
       return;
     }
 
-    // Get current variant
-    const variant = getCurrentVariant();
-    if (!variant) {
+    if (!currentVariant) {
       showMessage("Product variant not found", true);
       return;
     }
 
-    // Disable button during submission
     submitBtn.disabled = true;
     submitBtn.textContent = "Subscribing...";
 
     try {
-      // Prepare data
       const shop = "{{ shop.permanent_domain }}";
       const productTitle = {{ product.title | json }};
       const productId = {{ product.id | json }};
-      
-      // Get variant details
-      const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
-      const variantTitle = variant.title || variant.name || "Default";
-      const inventoryItemId = variant.inventory_item_id ? variant.inventory_item_id.toString() : null;
-      const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
-      
+
+      const variantId = currentVariant.id;
+      const variantTitle = currentVariant.title || "Default";
+      const inventoryItemId = currentVariant.inventory_item_id || null;
+      const currentPrice = currentVariant.price
+        ? (currentVariant.price / 100).toFixed(2)
+        : '0.00';
+
       const requestData = {
-        email: email,
-        variantId: variantId,
-        inventoryItemId: inventoryItemId,
+        email,
+        variantId: String(variantId),
+        inventoryItemId: inventoryItemId ? String(inventoryItemId) : null,
         productId: String(productId),
         productName: productTitle,
-        variantTitle: variantTitle,
-        shop: shop,
-        currentPrice: currentPrice
+        variantTitle,
+        shop,
+        currentPrice
       };
-      
-      console.log("📤 Sending subscription request:", requestData);
-      
+
       const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData)
       });
 
-      // Log response for debugging
-      console.log("Response status:", response.status);
-
-      // Check if response has content
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        console.error("Response is not JSON. Content-Type:", contentType);
-        const text = await response.text();
-        console.error("Response body:", text);
-        showMessage("Server error. Please try again.", true);
-        return;
-      }
-
       const data = await response.json();
-      console.log("Response data:", data);
 
       if (response.ok && data.success) {
-        showMessage("✅ Subscribed! We'll notify you when it's back.", false);
+        showMessage("✅ Subscribed! We'll notify you.", false);
         emailInput.value = "";
-        
-        // Close modal after 2 seconds
         setTimeout(closeModal, 2000);
       } else {
-        showMessage(data.message || data.error || "Subscription failed. Please try again.", true);
+        showMessage(data.message || "Failed. Try again.", true);
       }
+
     } catch (error) {
-      console.error("Subscription error:", error);
-      showMessage("Network error. Please try again.", true);
+      showMessage("Network error. Try again.", true);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = {{ block.settings.subscribe_text | json }};
     }
   };
 
-  // Allow Enter key to submit
   emailInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
