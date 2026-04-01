@@ -196,17 +196,16 @@
   });
 
   function updateVariantButton() {
-    if (!currentVariant) return;
+ const isProductAvailable = {{ product.available | json }};
 
-    if (currentVariant.available) {
-      btn.style.display = "none";
-      modal.style.display = "none";
-      overlay.style.display = "none";
-    } else {
-      btn.style.display = "block";
-    }
+  if (isProductAvailable) {
+    btn.style.display = "none";
+    modal.style.display = "none";
+    overlay.style.display = "none";
+  } else {
+    btn.style.display = "block";
   }
-
+}
   function closeModal() {
     modal.style.display = "none";
     overlay.style.display = "none";
