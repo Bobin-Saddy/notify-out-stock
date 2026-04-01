@@ -7,9 +7,8 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  console.log("💚 Add to Wishlist API called");
+  console.log("💚 Wishlist API called");
 
-  // Handle CORS
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204 });
   }
@@ -17,74 +16,77 @@ export const action = async ({ request }) => {
   try {
     const { admin } = await authenticate.public.appProxy(request);
     const body = await request.json();
-    
     console.log("📦 Request body:", body);
-    
-    const { email, productId, variantId, productTitle, variantTitle, productImage, productHandle, price, shop } = body;
+
+    const {
+      email, productId, variantId, productTitle,
+      variantTitle, productImage, productHandle,
+      price, shop,
+      action: wishlistAction   // "add" | "remove"
+    } = body;
 
     if (!email || !productId || !shop) {
-      console.error("❌ Missing required fields:", { email: !!email, productId: !!productId, shop: !!shop });
       return new Response(
         JSON.stringify({ success: false, error: "Missing required fields" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Validate email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      console.error("❌ Invalid email format:", email);
       return new Response(
         JSON.stringify({ success: false, error: "Invalid email format" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Check if already in wishlist
-    const existing = await prisma.wishlist.findFirst({
-      where: { 
-        shop: shop,
-        email: email,
-        productId: String(productId) 
-      }
-    });
-
-    if (existing) {
-      console.log("⚠️ Already in wishlist:", email, productId);
+    // ✅ REMOVE action
+    if (wishlistAction === "remove") {
+      await prisma.wishlist.deleteMany({
+        where: { shop, email, productId: String(productId) }
+      });
+      console.log("🗑️ Removed from wishlist:", email, productId);
       return new Response(
-        JSON.stringify({ success: true, message: "Already in wishlist" }),
+        JSON.stringify({ success: true, message: "Removed from wishlist", wishlisted: false }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Add to wishlist
+    // ✅ ADD action — duplicate check
+    const existing = await prisma.wishlist.findFirst({
+      where: { shop, email, productId: String(productId) }
+    });
+
+    if (existing) {
+      console.log("⚠️ Already in wishlist");
+      return new Response(
+        JSON.stringify({ success: true, message: "Already in wishlist", wishlisted: true }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const wishlistItem = await prisma.wishlist.create({
       data: {
-        shop: shop,
-        email: email,
+        shop,
+        email,
         productId: String(productId),
         variantId: String(variantId),
-        productTitle: productTitle,
+        productTitle,
         variantTitle: variantTitle || "Default",
-        productImage: productImage,
-        productHandle: productHandle,
+        productImage,
+        productHandle,
         price: parseFloat(price) || 0,
       }
     });
 
     console.log("✅ Added to wishlist:", wishlistItem.id);
-
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: "Added to wishlist", 
-        data: wishlistItem 
-      }),
+      JSON.stringify({ success: true, message: "Added to wishlist", wishlisted: true, data: wishlistItem }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
+
   } catch (error) {
-    console.error("❌ Add to wishlist error:", error);
-    console.error("Error stack:", error.stack);
+    console.error("❌ Wishlist error:", error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       { status: 500, headers: { "Content-Type": "application/json" } }

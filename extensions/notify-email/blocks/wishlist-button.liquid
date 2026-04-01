@@ -1,182 +1,376 @@
 {% comment %}
-  Wishlist button - Shows on all products (works best on IN STOCK products)
+  Wishlist Button with Email Popup
   File: wishlist-button.liquid
 {% endcomment %}
 
 <style>
-/* Wishlist Button */
-#wishlist-btn { 
-  width: 100%; 
-  padding: 16px; 
-  color: white; 
-  cursor: pointer; 
-  border: none; 
-  border-radius: 10px; 
-  font-size: 16px; 
-  font-weight: bold;
-  transition: all 0.3s;
-  display: flex;
+/* ── Wishlist Button ── */
+.wl-btn-{{ block.id }} {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  background: linear-gradient(135deg, {{ block.settings.wishlist_color }}, {{ block.settings.wishlist_color_hover }});
+  padding: 14px 20px;
+  background: transparent;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s;
+  width: 100%;
+  justify-content: center;
+  color: #111;
 }
 
-#wishlist-btn.in-wishlist {
-  background: linear-gradient(135deg, {{ block.settings.in_wishlist_color }}, {{ block.settings.in_wishlist_color_hover }});
+.wl-btn-{{ block.id }}:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: #fff5f5;
 }
 
-#wishlist-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+.wl-btn-{{ block.id }}.wishlisted {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: #fff5f5;
 }
 
-#wishlist-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
+.wl-btn-{{ block.id }} svg {
+  width: 20px;
+  height: 20px;
+  transition: all 0.25s;
+  flex-shrink: 0;
 }
 
-.wishlist-icon {
-  font-size: 18px;
+.wl-btn-{{ block.id }}.wishlisted svg {
+  fill: #ef4444;
+  stroke: #ef4444;
+}
+
+/* ── Overlay ── */
+.wl-overlay-{{ block.id }} {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  display: none;
+  z-index: 9998;
+}
+
+/* ── Modal ── */
+.wl-modal-{{ block.id }} {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% - 32px);
+  max-width: 400px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 28px 24px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.2);
+  z-index: 9999;
+  display: none;
+  animation: wlPop 0.2s ease forwards;
+}
+
+@keyframes wlPop {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.95); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1);    }
+}
+
+.wl-modal-{{ block.id }} .wl-heart-icon {
+  text-align: center;
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.wl-modal-{{ block.id }} h3 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  color: #111;
+}
+
+.wl-modal-{{ block.id }} p {
+  margin: 0 0 20px;
+  font-size: 14px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.wl-modal-close-{{ block.id }} {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  border: none;
+  background: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #9ca3af;
   line-height: 1;
 }
 
-.wishlist-text {
-  font-weight: 700;
+.wl-modal-close-{{ block.id }}:hover { color: #111; }
+
+.wl-input-{{ block.id }} {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 15px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+  outline: none;
 }
+
+.wl-input-{{ block.id }}:focus { border-color: #ef4444; }
+
+.wl-save-btn-{{ block.id }} {
+  width: 100%;
+  padding: 14px;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.wl-save-btn-{{ block.id }}:hover    { background: #dc2626; }
+.wl-save-btn-{{ block.id }}:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.wl-msg-{{ block.id }} {
+  margin-top: 10px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.wl-msg-{{ block.id }}.success { color: #10b981; }
+.wl-msg-{{ block.id }}.error   { color: #ef4444; }
 </style>
 
-<button id="wishlist-btn" data-in-wishlist="false">
-  <span class="wishlist-icon">{{ block.settings.icon_default | default: '❤️' }}</span>
-  <span class="wishlist-text">{{ block.settings.button_text | default: 'Add to Wishlist' }}</span>
+<!-- Wishlist Button -->
+<button class="wl-btn-{{ block.id }}" aria-label="Add to wishlist">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </svg>
+  <span class="wl-btn-text-{{ block.id }}">{{ block.settings.button_text | default: 'Add to Wishlist' }}</span>
 </button>
 
+<!-- Overlay -->
+<div class="wl-overlay-{{ block.id }}"></div>
+
+<!-- Email Modal -->
+<div class="wl-modal-{{ block.id }}" role="dialog" aria-modal="true">
+  <button class="wl-modal-close-{{ block.id }}" aria-label="Close">✕</button>
+
+  <div class="wl-heart-icon">❤️</div>
+  <h3>{{ block.settings.modal_title | default: 'Save to Wishlist' }}</h3>
+  <p>{{ block.settings.modal_subtitle | default: "Enter your email to save this item and we'll notify you of any price changes." }}</p>
+
+  <input
+    type="email"
+    class="wl-input-{{ block.id }}"
+    placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}"
+  >
+
+  <button class="wl-save-btn-{{ block.id }}">
+    {{ block.settings.save_button_text | default: 'Save to Wishlist' }}
+  </button>
+
+  <p class="wl-msg-{{ block.id }}"></p>
+</div>
+
 <script>
-(function() {
-  const wishlistBtn = document.getElementById("wishlist-btn");
-  const wishlistIcon = wishlistBtn.querySelector('.wishlist-icon');
-  const wishlistText = wishlistBtn.querySelector('.wishlist-text');
-  
-  const shop = "{{ shop.permanent_domain }}";
-  const productId = {{ product.id | json }};
-  const productTitle = {{ product.title | json }};
-  const productImage = {{ product.featured_image | img_url: 'medium' | json }};
-  const productHandle = {{ product.handle | json }};
+(function () {
+  const BLOCK_ID   = {{ block.id | json }};
+  const PRODUCT_ID = String({{ product.id }});
+  const STORAGE_KEY = 'wl_' + {{ shop.permanent_domain | json }} + '_' + PRODUCT_ID;
 
-  const iconDefault = {{ block.settings.icon_default | default: '❤️' | json }};
-  const iconInWishlist = {{ block.settings.icon_in_wishlist | default: '💚' | json }};
-  const textDefault = {{ block.settings.button_text | default: 'Add to Wishlist' | json }};
-  const textInWishlist = {{ block.settings.button_text_added | default: 'In Wishlist' | json }};
+  const btn      = document.querySelector('.wl-btn-'        + BLOCK_ID);
+  const btnText  = document.querySelector('.wl-btn-text-'   + BLOCK_ID);
+  const overlay  = document.querySelector('.wl-overlay-'    + BLOCK_ID);
+  const modal    = document.querySelector('.wl-modal-'      + BLOCK_ID);
+  const closeBtn = document.querySelector('.wl-modal-close-'+ BLOCK_ID);
+  const input    = document.querySelector('.wl-input-'      + BLOCK_ID);
+  const saveBtn  = document.querySelector('.wl-save-btn-'   + BLOCK_ID);
+  const msgEl    = document.querySelector('.wl-msg-'        + BLOCK_ID);
 
-  function getCurrentVariant() {
-    return {{ product.selected_or_first_available_variant | json }};
+  const TEXT_ADD    = {{ block.settings.button_text | default: 'Add to Wishlist' | json }};
+  const TEXT_SAVED  = {{ block.settings.button_saved_text | default: 'Wishlisted ✓' | json }};
+  const TEXT_SAVE_BTN = {{ block.settings.save_button_text | default: 'Save to Wishlist' | json }};
+
+  // ── State ─────────────────────────────────────────────
+
+  // localStorage se saved email + wishlist status load karo
+  function getSavedData() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    } catch { return {}; }
   }
 
-  // Check if product is already in wishlist
-  async function checkWishlistStatus() {
-    const customerEmail = "{{ customer.email }}";
-    if (!customerEmail) return;
-
+  function saveData(data) {
     try {
-      const response = await fetch('/apps/notify-out-stock/proxy/wishlist/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: customerEmail,
-          productId: String(productId),
-          shop: shop
-        })
-      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {}
+  }
 
-      const data = await response.json();
-      if (data.inWishlist) {
-        updateButtonState(true);
-      }
-    } catch (error) {
-      console.error("Check wishlist error:", error);
+  function isWishlisted() {
+    return getSavedData().wishlisted === true;
+  }
+
+  function getSavedEmail() {
+    return getSavedData().email || '';
+  }
+
+  // ── UI Update ─────────────────────────────────────────
+
+  function setWishlistedUI(state) {
+    if (state) {
+      btn.classList.add('wishlisted');
+      btnText.textContent = TEXT_SAVED;
+    } else {
+      btn.classList.remove('wishlisted');
+      btnText.textContent = TEXT_ADD;
     }
   }
 
-  // Update button appearance
-  function updateButtonState(isInWishlist) {
-    wishlistBtn.classList.toggle('in-wishlist', isInWishlist);
-    wishlistBtn.setAttribute('data-in-wishlist', isInWishlist ? 'true' : 'false');
-    wishlistIcon.textContent = isInWishlist ? iconInWishlist : iconDefault;
-    wishlistText.textContent = isInWishlist ? textInWishlist : textDefault;
+  function showMsg(text, isError = false) {
+    msgEl.textContent = text;
+    msgEl.className   = 'wl-msg-' + BLOCK_ID + (isError ? ' error' : ' success');
   }
 
-  // Add/Remove from wishlist
-  wishlistBtn.onclick = async () => {
-    let customerEmail = "{{ customer.email }}";
-    
-    // If not logged in, prompt for email
-    if (!customerEmail) {
-      customerEmail = prompt("Please enter your email to add to wishlist:");
-      if (!customerEmail) return;
-      
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(customerEmail)) {
-        alert("Please enter a valid email address");
+  function openModal() {
+    input.value = getSavedEmail(); // Pehla email pre-fill karo
+    msgEl.textContent = '';
+    msgEl.className   = 'wl-msg-' + BLOCK_ID;
+    modal.style.display   = 'block';
+    overlay.style.display = 'block';
+    setTimeout(() => input.focus(), 100);
+  }
+
+  function closeModal() {
+    modal.style.display   = 'none';
+    overlay.style.display = 'none';
+  }
+
+  // ── API Call ──────────────────────────────────────────
+
+  async function callWishlistAPI(email, action) {
+    const allVariants = {{ product.variants | json }};
+    const urlParam    = new URLSearchParams(window.location.search).get('variant');
+    const variantId   = urlParam
+      ? parseInt(urlParam)
+      : (allVariants.find(v => v.available) || allVariants[0])?.id;
+    const variant     = allVariants.find(v => v.id === variantId) || allVariants[0];
+
+    const payload = {
+      email,
+      action,
+      shop:         {{ shop.permanent_domain | json }},
+      productId:    PRODUCT_ID,
+      variantId:    String(variant?.id || ''),
+      productTitle: {{ product.title | json }},
+      variantTitle: variant?.title || 'Default',
+      productImage: {{ product.featured_image | img_url: '400x' | json }},
+      productHandle: {{ product.handle | json }},
+      price:        variant ? (variant.price / 100).toFixed(2) : '0.00',
+    };
+
+    const res  = await fetch('/apps/notify-out-stock/proxy/wishlist-add', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    });
+
+    if (!res.headers.get('content-type')?.includes('application/json')) {
+      throw new Error('Server error');
+    }
+    return res.json();
+  }
+
+  // ── Button Click ──────────────────────────────────────
+
+  btn.onclick = async function () {
+    // ✅ Agar already wishlisted hai → UNWISHLIST (email chahiye, localStorage se lo)
+    if (isWishlisted()) {
+      const email = getSavedEmail();
+      if (!email) {
+        // email nahi pata → modal kholo phir se
+        openModal();
         return;
       }
+
+      btn.disabled = true;
+      try {
+        const data = await callWishlistAPI(email, 'remove');
+        if (data.success) {
+          saveData({ email, wishlisted: false }); // email yaad rakho, status false
+          setWishlistedUI(false);
+        }
+      } catch (e) {
+        console.error('Unwishlist error:', e);
+      } finally {
+        btn.disabled = false;
+      }
+      return;
     }
 
-    const isInWishlist = wishlistBtn.getAttribute('data-in-wishlist') === 'true';
-    const variant = getCurrentVariant();
-    const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
-    const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
+    // ✅ Wishlisted nahi → modal kholo
+    openModal();
+  };
 
-    wishlistBtn.disabled = true;
+  closeBtn.onclick = closeModal;
+  overlay.onclick  = closeModal;
+
+  // ── Save Button ───────────────────────────────────────
+
+  saveBtn.onclick = async function () {
+    const email = input.value.trim();
+
+    if (!email) { showMsg('Please enter your email', true); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showMsg('Please enter a valid email', true);
+      return;
+    }
+
+    saveBtn.disabled    = true;
+    saveBtn.textContent = 'Saving...';
 
     try {
-      const endpoint = isInWishlist 
-        ? '/apps/notify-out-stock/proxy/wishlist/remove' 
-        : '/apps/notify-out-stock/proxy/wishlist/add';
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: customerEmail,
-          productId: String(productId),
-          variantId: variantId,
-          productTitle: productTitle,
-          variantTitle: variant.title || "Default",
-          productImage: productImage,
-          productHandle: productHandle,
-          price: currentPrice,
-          shop: shop
-        })
-      });
+      const data = await callWishlistAPI(email, 'add');
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        updateButtonState(!isInWishlist);
-        
-        if (!isInWishlist) {
-          // Added to wishlist
-          alert('✅ Added to your wishlist!');
-        } else {
-          // Removed from wishlist
-          alert('❌ Removed from wishlist');
-        }
+      if (data.success) {
+        // ✅ localStorage mein save karo
+        saveData({ email, wishlisted: true });
+        setWishlistedUI(true);
+        showMsg('❤️ Saved to your wishlist!', false);
+        setTimeout(closeModal, 1500);
       } else {
-        alert(data.message || data.error || 'Something went wrong');
+        showMsg(data.error || 'Something went wrong', true);
       }
-    } catch (error) {
-      console.error("Wishlist error:", error);
-      alert('Network error. Please try again.');
+    } catch (err) {
+      console.error('Wishlist error:', err);
+      showMsg('Network error. Please try again.', true);
     } finally {
-      wishlistBtn.disabled = false;
+      saveBtn.disabled    = false;
+      saveBtn.textContent = TEXT_SAVE_BTN;
     }
   };
 
-  // Check status on load
-  document.addEventListener("DOMContentLoaded", () => {
-    checkWishlistStatus();
+  input.addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
   });
+
+  // ── Init: page load pe state restore karo ────────────
+  document.addEventListener('DOMContentLoaded', function () {
+    setWishlistedUI(isWishlisted());
+  });
+
 })();
 </script>
 
@@ -185,64 +379,12 @@
   "name": "Wishlist Button",
   "target": "section",
   "settings": [
-    {
-      "type": "paragraph",
-      "content": "Add a wishlist button to your product page. Customers can save products for later."
-    },
-    { 
-      "type": "text", 
-      "id": "button_text", 
-      "label": "Button Text (Not in Wishlist)", 
-      "default": "Add to Wishlist" 
-    },
-    { 
-      "type": "text", 
-      "id": "button_text_added", 
-      "label": "Button Text (In Wishlist)", 
-      "default": "In Wishlist" 
-    },
-    { 
-      "type": "text", 
-      "id": "icon_default", 
-      "label": "Icon (Not in Wishlist)", 
-      "default": "❤️",
-      "info": "Use emoji or leave empty"
-    },
-    { 
-      "type": "text", 
-      "id": "icon_in_wishlist", 
-      "label": "Icon (In Wishlist)", 
-      "default": "💚",
-      "info": "Use emoji or leave empty"
-    },
-    {
-      "type": "header",
-      "content": "Button Colors"
-    },
-    { 
-      "type": "color", 
-      "id": "wishlist_color", 
-      "label": "Button Color", 
-      "default": "#ec4899" 
-    },
-    { 
-      "type": "color", 
-      "id": "wishlist_color_hover", 
-      "label": "Button Color (Hover)", 
-      "default": "#ef4444" 
-    },
-    { 
-      "type": "color", 
-      "id": "in_wishlist_color", 
-      "label": "Button Color (In Wishlist)", 
-      "default": "#10b981" 
-    },
-    { 
-      "type": "color", 
-      "id": "in_wishlist_color_hover", 
-      "label": "Button Color (In Wishlist - Hover)", 
-      "default": "#059669" 
-    }
+    { "type": "text", "id": "button_text",       "label": "Button Text",             "default": "Add to Wishlist"     },
+    { "type": "text", "id": "button_saved_text", "label": "Button Wishlisted Text",  "default": "Wishlisted ✓"        },
+    { "type": "text", "id": "modal_title",       "label": "Modal Title",             "default": "Save to Wishlist"    },
+    { "type": "text", "id": "modal_subtitle",    "label": "Modal Subtitle",          "default": "Enter your email to save this item."  },
+    { "type": "text", "id": "email_placeholder", "label": "Email Placeholder",       "default": "Enter your email"    },
+    { "type": "text", "id": "save_button_text",  "label": "Save Button Text",        "default": "Save to Wishlist"    }
   ]
 }
 {% endschema %}
