@@ -2,9 +2,8 @@
   Only show notify button when product variant is OUT OF STOCK
   File: notify-me-button.liquid
 {% endcomment %}
-{% assign v = product.selected_or_first_available_variant %}
 
-{% if v.inventory_quantity <= 0 and v.inventory_management == "shopify" %}
+
 
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
@@ -89,7 +88,7 @@
   transition: 0.3s;
 }
 
-#bis-submit:hover  { opacity: 0.9; transform: translateY(-1px); }
+#bis-submit:hover    { opacity: 0.9; transform: translateY(-1px); }
 #bis-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
 #bis-message {
@@ -100,7 +99,7 @@
 #bis-message.success { color: #10b981; }
 #bis-message.error   { color: #ef4444; }
 
-/* ✅ Hidden by default — JS shows it only when out of stock */
+/* ✅ Hidden by default — JS shows only when out of stock */
 #bis-btn {
   display: none;
   width: 100%;
@@ -158,7 +157,7 @@
     v => v.id === productData.selected_or_first_available_variant.id
   ) || productData.variants[0];
 
-  // ✅ True out-of-stock check
+  // ✅ Out of stock check
   function isOutOfStock(variant) {
     if (!variant) return false;
     if (variant.inventory_management === "shopify") {
@@ -167,26 +166,26 @@
     return !variant.available;
   }
 
-  // ✅ Show/hide notify button + hide/show add-to-cart
+  // ✅ Show/hide buttons based on stock
   function updateVariantButton() {
     if (!currentVariant) return;
 
+    const addToCartBtns = document.querySelectorAll('.product-form__buttons, .shopify-payment-button');
+
     if (isOutOfStock(currentVariant)) {
+      // Show notify button, hide add-to-cart
       btn.style.display = "block";
-      // Hide Shopify buy buttons when out of stock
-      document.querySelectorAll('.product-form__buttons, .shopify-payment-button')
-        .forEach(el => el.style.setProperty('display', 'none', 'important'));
+      addToCartBtns.forEach(el => el.style.setProperty('display', 'none', 'important'));
     } else {
+      // Hide notify button + modal, restore add-to-cart
       btn.style.display = "none";
       modal.style.display = "none";
       overlay.style.display = "none";
-      // Restore Shopify buy buttons when in stock
-      document.querySelectorAll('.product-form__buttons, .shopify-payment-button')
-        .forEach(el => el.style.removeProperty('display'));
+      addToCartBtns.forEach(el => el.style.removeProperty('display'));
     }
   }
 
-  // ✅ Shopify 2.0 variant change
+  // ✅ Shopify 2.0 variant change event
   document.addEventListener('variant:change', function (event) {
     const variant = event.detail?.variant;
     if (!variant) return;
@@ -231,7 +230,7 @@
     messageEl.className = isError ? "error" : "success";
   }
 
-  btn.onclick     = openModal;
+  btn.onclick      = openModal;
   closeBtn.onclick = closeModal;
   overlay.onclick  = closeModal;
 
@@ -292,20 +291,18 @@
 })();
 </script>
 
-{% endif %}
-
 {% schema %}
 {
   "name": "Notify Me Button",
   "target": "section",
   "settings": [
-    { "type": "text",   "id": "button_text",      "label": "Button Text",             "default": "Notify me when available" },
-    { "type": "text",   "id": "headertext",        "label": "Header Text",             "default": "Get Notified" },
-    { "type": "text",   "id": "subheadertext",     "label": "Subheader Text",          "default": "Enter your email and we'll notify you when this product is back in stock." },
-    { "type": "text",   "id": "email_placeholder", "label": "Email Placeholder",       "default": "Enter your email" },
-    { "type": "text",   "id": "subscribe_text",    "label": "Subscribe Button Text",   "default": "Notify Me" },
-    { "type": "color",  "id": "popup_bg_color",    "label": "Popup Background Color",  "default": "#ffffff" },
-    { "type": "color",  "id": "popup_text_color",  "label": "Popup Text Color",        "default": "#000000" },
+    { "type": "text",  "id": "button_text",      "label": "Button Text",            "default": "Notify me when available" },
+    { "type": "text",  "id": "headertext",        "label": "Header Text",            "default": "Get Notified" },
+    { "type": "text",  "id": "subheadertext",     "label": "Subheader Text",         "default": "Enter your email and we'll notify you when this product is back in stock." },
+    { "type": "text",  "id": "email_placeholder", "label": "Email Placeholder",      "default": "Enter your email" },
+    { "type": "text",  "id": "subscribe_text",    "label": "Subscribe Button Text",  "default": "Notify Me" },
+    { "type": "color", "id": "popup_bg_color",    "label": "Popup Background Color", "default": "#ffffff" },
+    { "type": "color", "id": "popup_text_color",  "label": "Popup Text Color",       "default": "#000000" },
     {
       "type": "select",
       "id": "popup_font",
