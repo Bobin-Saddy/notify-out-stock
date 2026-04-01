@@ -2,7 +2,9 @@
   Only show notify button when product variant is OUT OF STOCK
   File: notify-me-button.liquid
 {% endcomment %}
-{% if product.selected_or_first_available_variant.available == false %}
+{% assign v = product.selected_or_first_available_variant %}
+
+{% if v.inventory_quantity <= 0 and v.inventory_management == "shopify" %}
 
 <style>
 .product-form__buttons, .shopify-payment-button { display:none !important; }
@@ -164,6 +166,7 @@
   <p id="bis-message"></p>
 </div>
 
+
 <script>
 (function() {
   const btn = document.getElementById("bis-btn");
@@ -174,38 +177,171 @@
   const emailInput = document.getElementById("bis-email");
   const messageEl = document.getElementById("bis-message");
 
-  let currentVariant = {{ product.selected_or_first_available_variant | json }};
+  // ✅ Full product data (IMPORTANT)
+  const productData = {{ product | json }};
+  let currentVariant = productData.selected_or_first_available_variant;
 
-  // ✅ Listen to variant change (Shopify 2.0)
+  // ✅ Check REAL stock (inventory आधारित)
+  function isOutOfStock(variant) {
+    if (!variant) return false;
+
+    if (variant.inventory_management === "shopify") {
+      return variant.inventory_quantity <= 0;
+    }
+
+    return !variant.available;
+  }
+
+  // ✅ Update button visibility
+  function updateVariantButton() {
+    if (!currentVariant) return;
+
+    if (isOutOfStock(currentVariant)) {
+      btn.style.display = "block";
+    } else {
+      btn.style.display = "none";
+      modal.style.display = "none";
+      overlay.style.display = "none";
+    }
+  }
+
+  // ✅ Shopify 2.0 variant change event
   document.addEventListener('variant:change', function(event) {
-    currentVariant = event.detail.variant;
+    const variant = event.detail.variant;
+    if (!variant) return;
+
+    const fullVariant = productData.variants.find(v => v.id == variant.id);
+    if (fullVariant) {
+      currentVariant = fullVariant;
+    } else {
+      currentVariant = variant;
+    }
+
     updateVariantButton();
   });
 
-  // Fallback (some themes use different events)
+  // ✅ Fallback (for older/custom themes)
   document.addEventListener('change', function(e) {
     if (e.target.name === 'id') {
       const variantId = e.target.value;
-      fetch(window.location.pathname + '.js')
-        .then(res => res.json())
-        .then(product => {
-          currentVariant = product.variants.find(v => v.id == variantId);
-          updateVariantButton();
-        });
+      const fullVariant = productData.variants.find(v => v.id == variantId);
+      if (fullVariant) {
+        currentVariant = fullVariant;
+        updateVariantButton();
+      }
     }
   });
 
-  function updateVariantButton() {
- const isProductAvailable = {{ product.available | json }};
+  // ✅ Init
+  document.addEventListener("DOMContentLoaded", updateVariantButton);
 
-  if (isProductAvailable) {
-    btn.style.display = "none";
+  // Open modal
+  btn.onclick = () => {
+    modal.style.display = "block";
+    overlay.style.display = "block";
+    emailInput.value = "";
+    messageEl.textContent = "";
+    messageEl.className = "";
+  };
+
+  // Close modal
+  function closeModal() {
     modal.style.display = "none";
     overlay.style.display = "none";
-  } else {
-    btn.style.display = "block";
+    messageEl.textContent = "";
+    messageEl.className = "";
   }
-}
+
+  closeBtn.onclick = closeModal;
+  overlay.onclick = closeModal;
+
+  // Show message
+  function showMessage(text, isError = false) {
+    messageEl.textContent = text;
+    messageEl.className = isError ? "error" : "success";
+  }
+
+  // Submit form
+  submitBtn.onclick = async () => {
+    const email = emailInput.value.trim();
+
+    if (!email) {
+      showMessage("Please enter your email", true);
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      showMessage("Please enter a valid email", true);
+      return;
+    }
+
+    if (!currentVariant) {
+      showMessage("Product variant not found", true);
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Subscribing...";
+
+    try {
+      const shop = "{{ shop.permanent_domain }}";
+      const productTitle = {{ product.title | json }};
+      const productId = {{ product.id | json }};
+
+      const variantId = currentVariant.id;
+      const variantTitle = currentVariant.title || "Default";
+      const inventoryItemId = currentVariant.inventory_item_id || null;
+      const currentPrice = currentVariant.price
+        ? (currentVariant.price / 100).toFixed(2)
+        : '0.00';
+
+      const requestData = {
+        email: email,
+        variantId: String(variantId),
+        inventoryItemId: inventoryItemId ? String(inventoryItemId) : null,
+        productId: String(productId),
+        productName: productTitle,
+        variantTitle: variantTitle,
+        shop: shop,
+        currentPrice: currentPrice
+      };
+
+      const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData)
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        showMessage("✅ Subscribed! We'll notify you.", false);
+        emailInput.value = "";
+        setTimeout(closeModal, 2000);
+      } else {
+        showMessage(data.message || "Subscription failed. Try again.", true);
+      }
+
+    } catch (error) {
+      console.error(error);
+      showMessage("Network error. Try again.", true);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = {{ block.settings.subscribe_text | json }};
+    }
+  };
+
+  // Enter key submit
+  emailInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitBtn.click();
+    }
+  });
+
+})();
+
   function closeModal() {
     modal.style.display = "none";
     overlay.style.display = "none";
