@@ -2,12 +2,9 @@
   Only show notify button when product variant is OUT OF STOCK
   File: notify-me-button.liquid
 {% endcomment %}
-{% if product.selected_or_first_available_variant.available == false %}
 
 <style>
-
-
-/* Overlay */
+/* ✅ Sirf bis-modal ki styling — koi global hide nahi */
 #bis-overlay {
   position: fixed;
   inset: 0;
@@ -17,7 +14,6 @@
   z-index: 9998;
 }
 
-/* Modal */
 #bis-modal {
   position: fixed;
   top: 50%;
@@ -38,10 +34,9 @@
 
 @keyframes bisPop {
   from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
-/* Header */
 #bis-modal h3 {
   margin: 0 0 8px;
   font-size: 22px;
@@ -49,7 +44,6 @@
   text-align: center;
 }
 
-/* Subheader */
 #bis-modal p.subtitle {
   margin: 0 0 20px;
   text-align: center;
@@ -57,7 +51,6 @@
   font-size: 14px;
 }
 
-/* Close */
 #bis-close {
   position: absolute;
   top: 12px;
@@ -69,7 +62,6 @@
   color: {{ block.settings.popup_text_color }};
 }
 
-/* Input */
 #bis-email {
   width: 100%;
   padding: 14px;
@@ -77,9 +69,9 @@
   border: 1px solid #ddd;
   font-size: 15px;
   margin-bottom: 14px;
+  box-sizing: border-box;
 }
 
-/* Subscribe Button */
 #bis-submit {
   width: 100%;
   padding: 14px;
@@ -93,41 +85,28 @@
   transition: 0.3s;
 }
 
-#bis-submit:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
+#bis-submit:hover    { opacity: 0.9; transform: translateY(-1px); }
+#bis-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
-#bis-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Message */
 #bis-message {
   margin-top: 12px;
   text-align: center;
   font-size: 14px;
 }
+#bis-message.success { color: #10b981; }
+#bis-message.error   { color: #ef4444; }
 
-#bis-message.success {
-  color: #10b981;
-}
-
-#bis-message.error {
-  color: #ef4444;
-}
-
-/* Main Button */
-#bis-btn { 
-  width:100%; 
-  padding:16px; 
+/* ✅ Hidden by default — JS controls visibility */
+#bis-btn {
+  display: none;
+  width: 100%;
+  padding: 16px;
   background: linear-gradient(135deg, #111, #333);
-  color:white; 
-  cursor:pointer; 
-  border:none; 
-  border-radius: 10px; 
-  font-size: 16px; 
+  color: white;
+  cursor: pointer;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: bold;
   transition: all 0.3s;
 }
@@ -139,54 +118,125 @@
 </style>
 
 <button id="bis-btn">
- {{ block.settings.button_text | default: 'Notify me when available' }}
+  {{ block.settings.button_text | default: 'Notify me when available' }}
 </button>
 
 <div id="bis-overlay"></div>
 
 <div id="bis-modal">
   <button id="bis-close">✕</button>
-
   <h3>{{ block.settings.headertext }}</h3>
   <p class="subtitle">{{ block.settings.subheadertext }}</p>
-
-  <input 
-    type="email" 
-    id="bis-email" 
-    placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}" 
+  <input
+    type="email"
+    id="bis-email"
+    placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}"
     required
   >
-
   <button id="bis-submit">
     {{ block.settings.subscribe_text | default: 'Notify Me' }}
   </button>
-
   <p id="bis-message"></p>
 </div>
 
 <script>
-(function() {
-  const btn = document.getElementById("bis-btn");
-  const modal = document.getElementById("bis-modal");
-  const overlay = document.getElementById("bis-overlay");
-  const closeBtn = document.getElementById("bis-close");
-  const submitBtn = document.getElementById("bis-submit");
+(function () {
+  const btn        = document.getElementById("bis-btn");
+  const modal      = document.getElementById("bis-modal");
+  const overlay    = document.getElementById("bis-overlay");
+  const closeBtn   = document.getElementById("bis-close");
+  const submitBtn  = document.getElementById("bis-submit");
   const emailInput = document.getElementById("bis-email");
-  const messageEl = document.getElementById("bis-message");
+  const messageEl  = document.getElementById("bis-message");
 
+  const productData = {{ product | json }};
+  let currentVariant = productData.variants.find(
+    v => v.id === productData.selected_or_first_available_variant.id
+  ) || productData.variants[0];
 
+  // ✅ Shopify AJAX API — live stock fetch
+  async function fetchLiveVariant(variantId) {
+    try {
+      const res = await fetch(`/variants/${variantId}.js`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      console.error("Live fetch failed:", e);
+      return null;
+    }
+  }
 
-  function updateVariantButton() {
-    const v = getCurrentVariant();
-    if (!v) return;
+  // ✅ Out of stock check
+  function isOutOfStock(variant) {
+    if (!variant) return false;
+    if (variant.inventory_management === "shopify") {
+      return variant.inventory_quantity <= 0;
+    }
+    return !variant.available;
+  }
 
-    if (v.available) {
+  // ✅ JS se dynamically hide/show — koi global CSS nahi
+  async function updateVariantButton() {
+    if (!currentVariant) return;
+
+    const live = await fetchLiveVariant(currentVariant.id);
+    const check = live || currentVariant;
+
+    // ✅ Sirf is product page ke buttons target karo
+    const cartBtns = document.querySelectorAll('.product-form__buttons, .shopify-payment-button');
+
+    if (isOutOfStock(check)) {
+      // Out of stock — notify button dikhao, cart buttons chhupaao
+      btn.style.display = "block";
+      cartBtns.forEach(el => {
+        el.setAttribute('data-bis-hidden', 'true');
+        el.style.setProperty('display', 'none', 'important');
+      });
+    } else {
+      // In stock — notify button chhupaao, cart buttons restore karo
       btn.style.display = "none";
       modal.style.display = "none";
       overlay.style.display = "none";
-    } else {
-      btn.style.display = "block";
+      cartBtns.forEach(el => {
+        el.removeAttribute('data-bis-hidden');
+        el.style.removeProperty('display');
+      });
     }
+  }
+
+  // ✅ Shopify 2.0 variant change
+  document.addEventListener('variant:change', function (e) {
+    const v = e.detail?.variant;
+    if (!v) return;
+    currentVariant = productData.variants.find(x => x.id == v.id) || v;
+    updateVariantButton();
+  });
+
+  // ✅ Fallback older themes
+  document.addEventListener('change', function (e) {
+    if (e.target.name === 'id') {
+      const full = productData.variants.find(v => v.id == e.target.value);
+      if (full) { currentVariant = full; updateVariantButton(); }
+    }
+  });
+
+  // ✅ On page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateVariantButton);
+  } else {
+    updateVariantButton();
+  }
+
+  // ✅ Poll every 30s
+  setInterval(updateVariantButton, 30000);
+
+  // --- Modal ---
+  function openModal() {
+    modal.style.display = "block";
+    overlay.style.display = "block";
+    emailInput.value = "";
+    messageEl.textContent = "";
+    messageEl.className = "";
   }
 
   function closeModal() {
@@ -201,150 +251,96 @@
     messageEl.className = isError ? "error" : "success";
   }
 
-  document.addEventListener("DOMContentLoaded", updateVariantButton);
-
-  // Open modal
-  btn.onclick = () => {
-    modal.style.display = "block";
-    overlay.style.display = "block";
-    emailInput.value = "";
-    messageEl.textContent = "";
-    messageEl.className = "";
-  };
-
-  // Close modal
+  btn.onclick      = openModal;
   closeBtn.onclick = closeModal;
-  overlay.onclick = closeModal;
+  overlay.onclick  = closeModal;
 
-  // Submit form
+  // --- Submit ---
   submitBtn.onclick = async () => {
     const email = emailInput.value.trim();
-    
-    // Validate email
-    if (!email) {
-      showMessage("Please enter your email", true);
-      return;
-    }
+    if (!email) { showMessage("Please enter your email", true); return; }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      showMessage("Please enter a valid email", true);
-      return;
-    }
+    if (!emailRegex.test(email)) { showMessage("Please enter a valid email", true); return; }
+    if (!currentVariant) { showMessage("Product variant not found", true); return; }
 
-    // Get current variant
-    const variant = getCurrentVariant();
-    if (!variant) {
-      showMessage("Product variant not found", true);
-      return;
-    }
-
-    // Disable button during submission
     submitBtn.disabled = true;
     submitBtn.textContent = "Subscribing...";
 
     try {
-      // Prepare data
-      const shop = "{{ shop.permanent_domain }}";
-      const productTitle = {{ product.title | json }};
-      const productId = {{ product.id | json }};
-      
-      // Get variant details
-      const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
-      const variantTitle = variant.title || variant.name || "Default";
-      const inventoryItemId = variant.inventory_item_id ? variant.inventory_item_id.toString() : null;
-      const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
-      
-      const requestData = {
-        email: email,
-        variantId: variantId,
-        inventoryItemId: inventoryItemId,
-        productId: String(productId),
-        productName: productTitle,
-        variantTitle: variantTitle,
-        shop: shop,
-        currentPrice: currentPrice
-      };
-      
-      console.log("📤 Sending subscription request:", requestData);
-      
-      const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData)
-      });
+      // Double check before submit
+      const live = await fetchLiveVariant(currentVariant.id);
+      const check = live || currentVariant;
 
-      // Log response for debugging
-      console.log("Response status:", response.status);
-
-      // Check if response has content
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        console.error("Response is not JSON. Content-Type:", contentType);
-        const text = await response.text();
-        console.error("Response body:", text);
-        showMessage("Server error. Please try again.", true);
+      if (!isOutOfStock(check)) {
+        showMessage("This product is now in stock! No need to subscribe.", true);
+        setTimeout(updateVariantButton, 500);
         return;
       }
 
+      const requestData = {
+        email,
+        variantId:       String(currentVariant.id),
+        inventoryItemId: currentVariant.inventory_item_id ? String(currentVariant.inventory_item_id) : null,
+        productId:       String({{ product.id | json }}),
+        productName:     {{ product.title | json }},
+        variantTitle:    currentVariant.title || "Default",
+        shop:            "{{ shop.permanent_domain }}",
+        currentPrice:    currentVariant.price ? (currentVariant.price / 100).toFixed(2) : '0.00'
+      };
+
+      const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData)
+      });
+
       const data = await response.json();
-      console.log("Response data:", data);
 
       if (response.ok && data.success) {
-        showMessage("✅ Subscribed! We'll notify you when it's back.", false);
+        showMessage("✅ Subscribed! We'll notify you.", false);
         emailInput.value = "";
-        
-        // Close modal after 2 seconds
         setTimeout(closeModal, 2000);
       } else {
-        showMessage(data.message || data.error || "Subscription failed. Please try again.", true);
+        showMessage(data.message || data.error || "Subscription failed. Try again.", true);
       }
-    } catch (error) {
-      console.error("Subscription error:", error);
-      showMessage("Network error. Please try again.", true);
+    } catch (err) {
+      console.error(err);
+      showMessage("Network error. Try again.", true);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = {{ block.settings.subscribe_text | json }};
     }
   };
 
-  // Allow Enter key to submit
   emailInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submitBtn.click();
-    }
+    if (e.key === "Enter") { e.preventDefault(); submitBtn.click(); }
   });
+
 })();
 </script>
-
-{% endif %}
 
 {% schema %}
 {
   "name": "Notify Me Button",
   "target": "section",
   "settings": [
-    { "type": "text", "id": "button_text", "label": "Button Text", "default": "Notify me when available" },
-    { "type": "text", "id": "headertext", "label": "Header Text", "default": "Get Notified" },
-    { "type": "text", "id": "subheadertext", "label": "Subheader Text", "default": "Enter your email and we'll notify you when this product is back in stock." },
-    { "type": "text", "id": "email_placeholder", "label": "Email Placeholder", "default": "Enter your email" },
-    { "type": "text", "id": "subscribe_text", "label": "Subscribe Button Text", "default": "Notify Me" },
-
-    { "type": "color", "id": "popup_bg_color", "label": "Popup Background Color", "default": "#ffffff" },
-    { "type": "color", "id": "popup_text_color", "label": "Popup Text Color", "default": "#000000" },
-
+    { "type": "text",  "id": "button_text",      "label": "Button Text",            "default": "Notify me when available" },
+    { "type": "text",  "id": "headertext",        "label": "Header Text",            "default": "Get Notified" },
+    { "type": "text",  "id": "subheadertext",     "label": "Subheader Text",         "default": "Enter your email and we'll notify you when this product is back in stock." },
+    { "type": "text",  "id": "email_placeholder", "label": "Email Placeholder",      "default": "Enter your email" },
+    { "type": "text",  "id": "subscribe_text",    "label": "Subscribe Button Text",  "default": "Notify Me" },
+    { "type": "color", "id": "popup_bg_color",    "label": "Popup Background Color", "default": "#ffffff" },
+    { "type": "color", "id": "popup_text_color",  "label": "Popup Text Color",       "default": "#000000" },
     {
       "type": "select",
       "id": "popup_font",
       "label": "Popup Font Family",
       "default": "Inter, sans-serif",
       "options": [
-        { "value": "Inter, sans-serif", "label": "Inter" },
-        { "value": "Poppins, sans-serif", "label": "Poppins" },
-        { "value": "Roboto, sans-serif", "label": "Roboto" },
+        { "value": "Inter, sans-serif",      "label": "Inter" },
+        { "value": "Poppins, sans-serif",    "label": "Poppins" },
+        { "value": "Roboto, sans-serif",     "label": "Roboto" },
         { "value": "Montserrat, sans-serif", "label": "Montserrat" }
       ]
     }

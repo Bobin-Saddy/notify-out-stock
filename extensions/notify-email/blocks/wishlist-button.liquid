@@ -1,247 +1,348 @@
 {% comment %}
-  Wishlist button - Shows on all products (works best on IN STOCK products)
-  File: wishlist-button.liquid
+  Only show notify button when product variant is OUT OF STOCK
+  File: notify-me-button.liquid
 {% endcomment %}
 
 <style>
-/* Wishlist Button */
-#wishlist-btn { 
-  width: 100%; 
-  padding: 16px; 
-  color: white; 
-  cursor: pointer; 
-  border: none; 
-  border-radius: 10px; 
-  font-size: 16px; 
+/* ✅ Sirf bis-modal ki styling — koi global hide nahi */
+#bis-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  display: none;
+  z-index: 9998;
+}
+
+#bis-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+  width: 100%;
+  max-width: 420px;
+  background: {{ block.settings.popup_bg_color }};
+  color: {{ block.settings.popup_text_color }};
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  z-index: 9999;
+  display: none;
+  animation: bisPop 0.25s ease forwards;
+  font-family: {{ block.settings.popup_font }};
+}
+
+@keyframes bisPop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+#bis-modal h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+}
+
+#bis-modal p.subtitle {
+  margin: 0 0 20px;
+  text-align: center;
+  opacity: 0.8;
+  font-size: 14px;
+}
+
+#bis-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  border: none;
+  background: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: {{ block.settings.popup_text_color }};
+}
+
+#bis-email {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  font-size: 15px;
+  margin-bottom: 14px;
+  box-sizing: border-box;
+}
+
+#bis-submit {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  transition: 0.3s;
+}
+
+#bis-submit:hover    { opacity: 0.9; transform: translateY(-1px); }
+#bis-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+#bis-message {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 14px;
+}
+#bis-message.success { color: #10b981; }
+#bis-message.error   { color: #ef4444; }
+
+/* ✅ Hidden by default — JS controls visibility */
+#bis-btn {
+  display: none;
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, #111, #333);
+  color: white;
+  cursor: pointer;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: bold;
   transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: linear-gradient(135deg, {{ block.settings.wishlist_color }}, {{ block.settings.wishlist_color_hover }});
 }
 
-#wishlist-btn.in-wishlist {
-  background: linear-gradient(135deg, {{ block.settings.in_wishlist_color }}, {{ block.settings.in_wishlist_color_hover }});
-}
-
-#wishlist-btn:hover {
+#bis-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
-
-#wishlist-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.wishlist-icon {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.wishlist-text {
-  font-weight: 700;
-}
 </style>
 
-<button id="wishlist-btn" data-in-wishlist="false">
-  <span class="wishlist-icon">{{ block.settings.icon_default | default: '❤️' }}</span>
-  <span class="wishlist-text">{{ block.settings.button_text | default: 'Add to Wishlist' }}</span>
+<button id="bis-btn">
+  {{ block.settings.button_text | default: 'Notify me when available' }}
 </button>
 
+<div id="bis-overlay"></div>
+
+<div id="bis-modal">
+  <button id="bis-close">✕</button>
+  <h3>{{ block.settings.headertext }}</h3>
+  <p class="subtitle">{{ block.settings.subheadertext }}</p>
+  <input
+    type="email"
+    id="bis-email"
+    placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}"
+    required
+  >
+  <button id="bis-submit">
+    {{ block.settings.subscribe_text | default: 'Notify Me' }}
+  </button>
+  <p id="bis-message"></p>
+</div>
+
 <script>
-(function() {
-  const wishlistBtn = document.getElementById("wishlist-btn");
-  const wishlistIcon = wishlistBtn.querySelector('.wishlist-icon');
-  const wishlistText = wishlistBtn.querySelector('.wishlist-text');
-  
-  const shop = "{{ shop.permanent_domain }}";
-  const productId = {{ product.id | json }};
-  const productTitle = {{ product.title | json }};
-  const productImage = {{ product.featured_image | img_url: 'medium' | json }};
-  const productHandle = {{ product.handle | json }};
+(function () {
+  const btn        = document.getElementById("bis-btn");
+  const modal      = document.getElementById("bis-modal");
+  const overlay    = document.getElementById("bis-overlay");
+  const closeBtn   = document.getElementById("bis-close");
+  const submitBtn  = document.getElementById("bis-submit");
+  const emailInput = document.getElementById("bis-email");
+  const messageEl  = document.getElementById("bis-message");
 
-  const iconDefault = {{ block.settings.icon_default | default: '❤️' | json }};
-  const iconInWishlist = {{ block.settings.icon_in_wishlist | default: '💚' | json }};
-  const textDefault = {{ block.settings.button_text | default: 'Add to Wishlist' | json }};
-  const textInWishlist = {{ block.settings.button_text_added | default: 'In Wishlist' | json }};
+  const productData = {{ product | json }};
+  let currentVariant = productData.variants.find(
+    v => v.id === productData.selected_or_first_available_variant.id
+  ) || productData.variants[0];
 
-  function getCurrentVariant() {
-    return {{ product.selected_or_first_available_variant | json }};
-  }
-
-  // Check if product is already in wishlist
-  async function checkWishlistStatus() {
-    const customerEmail = "{{ customer.email }}";
-    if (!customerEmail) return;
-
+  // ✅ Shopify AJAX API — live stock fetch
+  async function fetchLiveVariant(variantId) {
     try {
-      const response = await fetch('/apps/notify-out-stock/proxy/wishlist/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: customerEmail,
-          productId: String(productId),
-          shop: shop
-        })
-      });
-
-      const data = await response.json();
-      if (data.inWishlist) {
-        updateButtonState(true);
-      }
-    } catch (error) {
-      console.error("Check wishlist error:", error);
+      const res = await fetch(`/variants/${variantId}.js`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      console.error("Live fetch failed:", e);
+      return null;
     }
   }
 
-  // Update button appearance
-  function updateButtonState(isInWishlist) {
-    wishlistBtn.classList.toggle('in-wishlist', isInWishlist);
-    wishlistBtn.setAttribute('data-in-wishlist', isInWishlist ? 'true' : 'false');
-    wishlistIcon.textContent = isInWishlist ? iconInWishlist : iconDefault;
-    wishlistText.textContent = isInWishlist ? textInWishlist : textDefault;
+  // ✅ Out of stock check
+  function isOutOfStock(variant) {
+    if (!variant) return false;
+    if (variant.inventory_management === "shopify") {
+      return variant.inventory_quantity <= 0;
+    }
+    return !variant.available;
   }
 
-  // Add/Remove from wishlist
-  wishlistBtn.onclick = async () => {
-    let customerEmail = "{{ customer.email }}";
-    
-    // If not logged in, prompt for email
-    if (!customerEmail) {
-      customerEmail = prompt("Please enter your email to add to wishlist:");
-      if (!customerEmail) return;
-      
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(customerEmail)) {
-        alert("Please enter a valid email address");
+  // ✅ JS se dynamically hide/show — koi global CSS nahi
+  async function updateVariantButton() {
+    if (!currentVariant) return;
+
+    const live = await fetchLiveVariant(currentVariant.id);
+    const check = live || currentVariant;
+
+    // ✅ Sirf is product page ke buttons target karo
+    const cartBtns = document.querySelectorAll('.product-form__buttons, .shopify-payment-button');
+
+    if (isOutOfStock(check)) {
+      // Out of stock — notify button dikhao, cart buttons chhupaao
+      btn.style.display = "block";
+      cartBtns.forEach(el => {
+        el.setAttribute('data-bis-hidden', 'true');
+        el.style.setProperty('display', 'none', 'important');
+      });
+    } else {
+      // In stock — notify button chhupaao, cart buttons restore karo
+      btn.style.display = "none";
+      modal.style.display = "none";
+      overlay.style.display = "none";
+      cartBtns.forEach(el => {
+        el.removeAttribute('data-bis-hidden');
+        el.style.removeProperty('display');
+      });
+    }
+  }
+
+  // ✅ Shopify 2.0 variant change
+  document.addEventListener('variant:change', function (e) {
+    const v = e.detail?.variant;
+    if (!v) return;
+    currentVariant = productData.variants.find(x => x.id == v.id) || v;
+    updateVariantButton();
+  });
+
+  // ✅ Fallback older themes
+  document.addEventListener('change', function (e) {
+    if (e.target.name === 'id') {
+      const full = productData.variants.find(v => v.id == e.target.value);
+      if (full) { currentVariant = full; updateVariantButton(); }
+    }
+  });
+
+  // ✅ On page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateVariantButton);
+  } else {
+    updateVariantButton();
+  }
+
+  // ✅ Poll every 30s
+  setInterval(updateVariantButton, 30000);
+
+  // --- Modal ---
+  function openModal() {
+    modal.style.display = "block";
+    overlay.style.display = "block";
+    emailInput.value = "";
+    messageEl.textContent = "";
+    messageEl.className = "";
+  }
+
+  function closeModal() {
+    modal.style.display = "none";
+    overlay.style.display = "none";
+    messageEl.textContent = "";
+    messageEl.className = "";
+  }
+
+  function showMessage(text, isError = false) {
+    messageEl.textContent = text;
+    messageEl.className = isError ? "error" : "success";
+  }
+
+  btn.onclick      = openModal;
+  closeBtn.onclick = closeModal;
+  overlay.onclick  = closeModal;
+
+  // --- Submit ---
+  submitBtn.onclick = async () => {
+    const email = emailInput.value.trim();
+    if (!email) { showMessage("Please enter your email", true); return; }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) { showMessage("Please enter a valid email", true); return; }
+    if (!currentVariant) { showMessage("Product variant not found", true); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Subscribing...";
+
+    try {
+      // Double check before submit
+      const live = await fetchLiveVariant(currentVariant.id);
+      const check = live || currentVariant;
+
+      if (!isOutOfStock(check)) {
+        showMessage("This product is now in stock! No need to subscribe.", true);
+        setTimeout(updateVariantButton, 500);
         return;
       }
-    }
 
-    const isInWishlist = wishlistBtn.getAttribute('data-in-wishlist') === 'true';
-    const variant = getCurrentVariant();
-    const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
-    const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
+      const requestData = {
+        email,
+        variantId:       String(currentVariant.id),
+        inventoryItemId: currentVariant.inventory_item_id ? String(currentVariant.inventory_item_id) : null,
+        productId:       String({{ product.id | json }}),
+        productName:     {{ product.title | json }},
+        variantTitle:    currentVariant.title || "Default",
+        shop:            "{{ shop.permanent_domain }}",
+        currentPrice:    currentVariant.price ? (currentVariant.price / 100).toFixed(2) : '0.00'
+      };
 
-    wishlistBtn.disabled = true;
-
-    try {
-      const endpoint = isInWishlist 
-        ? '/apps/notify-out-stock/proxy/wishlist/remove' 
-        : '/apps/notify-out-stock/proxy/wishlist/add';
-      
-      const response = await fetch(endpoint, {
+      const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: customerEmail,
-          productId: String(productId),
-          variantId: variantId,
-          productTitle: productTitle,
-          variantTitle: variant.title || "Default",
-          productImage: productImage,
-          productHandle: productHandle,
-          price: currentPrice,
-          shop: shop
-        })
+        body: JSON.stringify(requestData)
       });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
-        updateButtonState(!isInWishlist);
-        
-        if (!isInWishlist) {
-          // Added to wishlist
-          alert('✅ Added to your wishlist!');
-        } else {
-          // Removed from wishlist
-          alert('❌ Removed from wishlist');
-        }
+        showMessage("✅ Subscribed! We'll notify you.", false);
+        emailInput.value = "";
+        setTimeout(closeModal, 2000);
       } else {
-        alert(data.message || data.error || 'Something went wrong');
+        showMessage(data.message || data.error || "Subscription failed. Try again.", true);
       }
-    } catch (error) {
-      console.error("Wishlist error:", error);
-      alert('Network error. Please try again.');
+    } catch (err) {
+      console.error(err);
+      showMessage("Network error. Try again.", true);
     } finally {
-      wishlistBtn.disabled = false;
+      submitBtn.disabled = false;
+      submitBtn.textContent = {{ block.settings.subscribe_text | json }};
     }
   };
 
-  // Check status on load
-  document.addEventListener("DOMContentLoaded", () => {
-    checkWishlistStatus();
+  emailInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); submitBtn.click(); }
   });
+
 })();
 </script>
 
 {% schema %}
 {
-  "name": "Wishlist Button",
+  "name": "Notify Me Button",
   "target": "section",
   "settings": [
+    { "type": "text",  "id": "button_text",      "label": "Button Text",            "default": "Notify me when available" },
+    { "type": "text",  "id": "headertext",        "label": "Header Text",            "default": "Get Notified" },
+    { "type": "text",  "id": "subheadertext",     "label": "Subheader Text",         "default": "Enter your email and we'll notify you when this product is back in stock." },
+    { "type": "text",  "id": "email_placeholder", "label": "Email Placeholder",      "default": "Enter your email" },
+    { "type": "text",  "id": "subscribe_text",    "label": "Subscribe Button Text",  "default": "Notify Me" },
+    { "type": "color", "id": "popup_bg_color",    "label": "Popup Background Color", "default": "#ffffff" },
+    { "type": "color", "id": "popup_text_color",  "label": "Popup Text Color",       "default": "#000000" },
     {
-      "type": "paragraph",
-      "content": "Add a wishlist button to your product page. Customers can save products for later."
-    },
-    { 
-      "type": "text", 
-      "id": "button_text", 
-      "label": "Button Text (Not in Wishlist)", 
-      "default": "Add to Wishlist" 
-    },
-    { 
-      "type": "text", 
-      "id": "button_text_added", 
-      "label": "Button Text (In Wishlist)", 
-      "default": "In Wishlist" 
-    },
-    { 
-      "type": "text", 
-      "id": "icon_default", 
-      "label": "Icon (Not in Wishlist)", 
-      "default": "❤️",
-      "info": "Use emoji or leave empty"
-    },
-    { 
-      "type": "text", 
-      "id": "icon_in_wishlist", 
-      "label": "Icon (In Wishlist)", 
-      "default": "💚",
-      "info": "Use emoji or leave empty"
-    },
-    {
-      "type": "header",
-      "content": "Button Colors"
-    },
-    { 
-      "type": "color", 
-      "id": "wishlist_color", 
-      "label": "Button Color", 
-      "default": "#ec4899" 
-    },
-    { 
-      "type": "color", 
-      "id": "wishlist_color_hover", 
-      "label": "Button Color (Hover)", 
-      "default": "#ef4444" 
-    },
-    { 
-      "type": "color", 
-      "id": "in_wishlist_color", 
-      "label": "Button Color (In Wishlist)", 
-      "default": "#10b981" 
-    },
-    { 
-      "type": "color", 
-      "id": "in_wishlist_color_hover", 
-      "label": "Button Color (In Wishlist - Hover)", 
-      "default": "#059669" 
+      "type": "select",
+      "id": "popup_font",
+      "label": "Popup Font Family",
+      "default": "Inter, sans-serif",
+      "options": [
+        { "value": "Inter, sans-serif",      "label": "Inter" },
+        { "value": "Poppins, sans-serif",    "label": "Poppins" },
+        { "value": "Roboto, sans-serif",     "label": "Roboto" },
+        { "value": "Montserrat, sans-serif", "label": "Montserrat" }
+      ]
     }
   ]
 }
