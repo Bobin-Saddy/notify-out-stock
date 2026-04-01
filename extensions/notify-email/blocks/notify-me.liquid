@@ -174,9 +174,7 @@
   const emailInput = document.getElementById("bis-email");
   const messageEl = document.getElementById("bis-message");
 
-  function getCurrentVariant() {
-    return {{ product.selected_or_first_available_variant | json }};
-  }
+
 
   function updateVariantButton() {
     const v = getCurrentVariant();
