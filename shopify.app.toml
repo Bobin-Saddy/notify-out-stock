@@ -2,7 +2,7 @@
 
 client_id = "7dcaa4c0997790c99be62840f72b2ac8"
 name = "Restockly – Stock Alerts"
-application_url = "https://notify-out-stock-production.up.railway.app"
+application_url = "https://notify-out-stock-production-bd8c.up.railway.app"
 embedded = true
 
 [build]
@@ -12,7 +12,7 @@ automatically_update_urls_on_dev = true
 # 🔁 APP PROXY (Storefront → App)
 # ================================
 [app_proxy]
-url = "https://notify-out-stock-production.up.railway.app"
+url = "https://notify-out-stock-production-bd8c.up.railway.app"
 subpath = "notify-out-stock"
 prefix = "apps"
 
@@ -53,5 +53,5 @@ scopes = "write_products,read_products,read_inventory"
 # ================================
 [auth]
 redirect_urls = [
-  "https://notify-out-stock-production.up.railway.app/auth/callback"
+  "https://notify-out-stock-production-bd8c.up.railway.app/auth/callback"
 ]
