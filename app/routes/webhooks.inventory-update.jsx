@@ -2,24 +2,148 @@
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
+// ─── Email translations for back-in-stock emails ──────────────
+const EMAIL_TRANSLATIONS = {
+  en: {
+    subject:       (title, limited) => `🎉 Back in Stock: ${title}${limited ? ' — Limited Quantity!' : ''}`,
+    heading:       '🎉 Back In Stock!',
+    intro:         (title, shop) => `Good news! <strong>${title}</strong> is now available at <strong>${shop}</strong>.`,
+    cta:           'Buy Now',
+    footer:        "You're receiving this because you subscribed to back-in-stock alerts.",
+    urgencyOnly:   'Only',
+    urgencyJust:   'Just',
+    urgencyLeft:   'Left in Stock!',
+    urgencyHurry:  'Hurry before it sells out again',
+    priceDropHead: '💰 Price Drop Alert!',
+    priceDropSave: (pct) => `Save ${pct}% - Limited Time!`,
+    priceDropCta:  'Shop Now & Save',
+    adminSubject:  (title) => `🚨 Stock Out: ${title}`,
+  },
+  hi: {
+    subject:       (title, limited) => `🎉 वापस स्टॉक में: ${title}${limited ? ' — सीमित मात्रा!' : ''}`,
+    heading:       '🎉 वापस स्टॉक में!',
+    intro:         (title, shop) => `अच्छी खबर! <strong>${title}</strong> अब <strong>${shop}</strong> पर उपलब्ध है।`,
+    cta:           'अभी खरीदें',
+    footer:        'आपको यह इसलिए मिल रहा है क्योंकि आपने स्टॉक अलर्ट के लिए सदस्यता ली थी।',
+    urgencyOnly:   'केवल',
+    urgencyJust:   'सिर्फ',
+    urgencyLeft:   'बचे हैं!',
+    urgencyHurry:  'जल्दी करें, फिर से बिकने से पहले!',
+    priceDropHead: '💰 मूल्य में गिरावट!',
+    priceDropSave: (pct) => `${pct}% बचाएं - सीमित समय!`,
+    priceDropCta:  'अभी खरीदें और बचाएं',
+    adminSubject:  (title) => `🚨 स्टॉक खत्म: ${title}`,
+  },
+  fr: {
+    subject:       (title, limited) => `🎉 De retour en stock : ${title}${limited ? ' — Quantité limitée !' : ''}`,
+    heading:       '🎉 De Retour en Stock !',
+    intro:         (title, shop) => `Bonne nouvelle ! <strong>${title}</strong> est maintenant disponible sur <strong>${shop}</strong>.`,
+    cta:           'Acheter Maintenant',
+    footer:        "Vous recevez ceci parce que vous vous êtes abonné aux alertes de réapprovisionnement.",
+    urgencyOnly:   'Seulement',
+    urgencyJust:   'Plus que',
+    urgencyLeft:   'en stock !',
+    urgencyHurry:  'Dépêchez-vous avant la rupture !',
+    priceDropHead: '💰 Alerte Baisse de Prix !',
+    priceDropSave: (pct) => `Économisez ${pct}% - Temps limité !`,
+    priceDropCta:  'Achetez et Économisez',
+    adminSubject:  (title) => `🚨 Rupture de stock : ${title}`,
+  },
+  de: {
+    subject:       (title, limited) => `🎉 Wieder verfügbar: ${title}${limited ? ' — Begrenzte Menge!' : ''}`,
+    heading:       '🎉 Wieder Verfügbar!',
+    intro:         (title, shop) => `Gute Neuigkeiten! <strong>${title}</strong> ist jetzt bei <strong>${shop}</strong> verfügbar.`,
+    cta:           'Jetzt Kaufen',
+    footer:        "Sie erhalten dies, weil Sie Benachrichtigungen abonniert haben.",
+    urgencyOnly:   'Nur noch',
+    urgencyJust:   'Nur',
+    urgencyLeft:   'auf Lager!',
+    urgencyHurry:  'Beeilen Sie sich, bevor es ausverkauft ist!',
+    priceDropHead: '💰 Preissenkung!',
+    priceDropSave: (pct) => `${pct}% sparen - Begrenzte Zeit!`,
+    priceDropCta:  'Jetzt kaufen & sparen',
+    adminSubject:  (title) => `🚨 Ausverkauft: ${title}`,
+  },
+  es: {
+    subject:       (title, limited) => `🎉 De vuelta en stock: ${title}${limited ? ' — ¡Cantidad limitada!' : ''}`,
+    heading:       '🎉 ¡De Vuelta en Stock!',
+    intro:         (title, shop) => `¡Buenas noticias! <strong>${title}</strong> ya está disponible en <strong>${shop}</strong>.`,
+    cta:           'Comprar Ahora',
+    footer:        "Recibes esto porque te suscribiste a las alertas de reposición.",
+    urgencyOnly:   'Solo',
+    urgencyJust:   'Solo',
+    urgencyLeft:   '¡en stock!',
+    urgencyHurry:  '¡Date prisa antes de que se agote!',
+    priceDropHead: '💰 ¡Alerta de Bajada de Precio!',
+    priceDropSave: (pct) => `¡Ahorra ${pct}% - Tiempo limitado!`,
+    priceDropCta:  'Compra y Ahorra',
+    adminSubject:  (title) => `🚨 Sin stock: ${title}`,
+  },
+  ar: {
+    subject:       (title, limited) => `🎉 عاد إلى المخزون: ${title}${limited ? ' — كمية محدودة!' : ''}`,
+    heading:       '🎉 عاد إلى المخزون!',
+    intro:         (title, shop) => `أخبار رائعة! <strong>${title}</strong> متاح الآن في <strong>${shop}</strong>.`,
+    cta:           'اشترِ الآن',
+    footer:        "تلقيت هذا لأنك اشتركت في تنبيهات إعادة التخزين.",
+    urgencyOnly:   'فقط',
+    urgencyJust:   'فقط',
+    urgencyLeft:   'في المخزون!',
+    urgencyHurry:  'أسرع قبل نفاد المخزون!',
+    priceDropHead: '💰 تنبيه انخفاض السعر!',
+    priceDropSave: (pct) => `وفر ${pct}% - لفترة محدودة!`,
+    priceDropCta:  'تسوق الآن ووفّر',
+    adminSubject:  (title) => `🚨 نفاد المخزون: ${title}`,
+  },
+  zh: {
+    subject:       (title, limited) => `🎉 已补货：${title}${limited ? ' — 数量有限！' : ''}`,
+    heading:       '🎉 已补货！',
+    intro:         (title, shop) => `好消息！<strong>${title}</strong> 现在已在 <strong>${shop}</strong> 上架。`,
+    cta:           '立即购买',
+    footer:        "您收到此邮件是因为您订阅了补货提醒。",
+    urgencyOnly:   '仅剩',
+    urgencyJust:   '仅剩',
+    urgencyLeft:   '件！',
+    urgencyHurry:  '快抢，售完为止！',
+    priceDropHead: '💰 降价提醒！',
+    priceDropSave: (pct) => `节省 ${pct}% — 限时优惠！`,
+    priceDropCta:  '立即抢购省钱',
+    adminSubject:  (title) => `🚨 缺货：${title}`,
+  },
+  ja: {
+    subject:       (title, limited) => `🎉 在庫復活：${title}${limited ? ' — 数量限定！' : ''}`,
+    heading:       '🎉 在庫が復活しました！',
+    intro:         (title, shop) => `嬉しいお知らせです！<strong>${title}</strong> が <strong>${shop}</strong> で再入荷しました。`,
+    cta:           '今すぐ購入',
+    footer:        "このメールは在庫復活通知にご登録いただいたためお送りしています。",
+    urgencyOnly:   'あと',
+    urgencyJust:   'あと',
+    urgencyLeft:   '点のみ！',
+    urgencyHurry:  'お早めに！売り切れる前に！',
+    priceDropHead: '💰 値下げのお知らせ！',
+    priceDropSave: (pct) => `${pct}% OFF — 期間限定！`,
+    priceDropCta:  '今すぐお得に購入',
+    adminSubject:  (title) => `🚨 在庫切れ：${title}`,
+  }
+};
+
+function getT(lang) {
+  return EMAIL_TRANSLATIONS[lang] || EMAIL_TRANSLATIONS['en'];
+}
+
+// ─── Email sender ─────────────────────────────────────────────
 async function sendEmail(emailData) {
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json'
+        'Content-Type':  'application/json'
       },
       body: JSON.stringify(emailData)
     });
-
     const resBody = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      console.error("❌ Resend API Error:", JSON.stringify(resBody));
-    } else {
-      console.log("✅ Resend accepted email, id:", resBody.id);
-    }
-
+    if (!res.ok) console.error("❌ Resend Error:", JSON.stringify(resBody));
+    else         console.log("✅ Resend accepted:", resBody.id);
     return res.ok;
   } catch (err) {
     console.error("❌ Email send failed:", err.message);
@@ -27,6 +151,7 @@ async function sendEmail(emailData) {
   }
 }
 
+// ─── Live inventory ───────────────────────────────────────────
 async function getLiveInventory(admin, inventoryItemId) {
   try {
     const response = await admin.graphql(`
@@ -41,53 +166,105 @@ async function getLiveInventory(admin, inventoryItemId) {
     const json = await response.json();
     return json.data?.inventoryItem?.inventoryLevels?.edges?.[0]?.node?.available ?? 0;
   } catch (err) {
-    console.error("❌ Error fetching live inventory:", err.message);
+    console.error("❌ Inventory fetch error:", err.message);
     return null;
   }
 }
 
-function getCountdownBadge(quantity, threshold = 200) {
+// ─── Countdown badge (language-aware) ────────────────────────
+function getCountdownBadge(quantity, t, threshold = 200) {
   if (quantity === null || quantity > threshold) return '';
   const color   = quantity <= 3 ? '#dc2626' : quantity <= 7 ? '#f59e0b' : '#10b981';
-  const urgency = quantity <= 3 ? 'Only' : 'Just';
+  const urgency = quantity <= 3 ? t.urgencyOnly : t.urgencyJust;
   return `
     <div style="background:linear-gradient(135deg,${color}22,${color}44);border:2px solid ${color};border-radius:12px;padding:12px 20px;margin:20px 0;text-align:center;">
-      <p style="margin:0;color:${color};font-weight:800;font-size:18px;">⚡ ${urgency} <span style="font-size:24px;">${quantity}</span> Left in Stock!</p>
-      <p style="margin:5px 0 0;color:#6b7280;font-size:14px;">Hurry before it sells out again</p>
+      <p style="margin:0;color:${color};font-weight:800;font-size:18px;">⚡ ${urgency} <span style="font-size:24px;">${quantity}</span> ${t.urgencyLeft}</p>
+      <p style="margin:5px 0 0;color:#6b7280;font-size:14px;">${t.urgencyHurry}</p>
     </div>`;
 }
 
-function getPriceDropBadge(oldPrice, newPrice, currency, percentageOff) {
+// ─── Price drop badge (language-aware) ───────────────────────
+function getPriceDropBadge(oldPrice, newPrice, currency, percentageOff, t) {
   return `
     <div style="background:linear-gradient(135deg,#10b98122,#10b98144);border:2px solid #10b981;border-radius:12px;padding:16px 20px;margin:20px 0;text-align:center;">
-      <p style="margin:0;color:#10b981;font-weight:800;font-size:20px;">💰 Price Drop Alert!</p>
+      <p style="margin:0;color:#10b981;font-weight:800;font-size:20px;">${t.priceDropHead}</p>
       <div style="margin-top:10px;">
         <span style="color:#9ca3af;font-size:16px;text-decoration:line-through;">${currency} ${oldPrice}</span>
         <span style="color:#111827;font-size:28px;font-weight:900;margin-left:10px;">${currency} ${newPrice}</span>
       </div>
-      <p style="margin:10px 0 0;color:#10b981;font-size:16px;font-weight:bold;">Save ${percentageOff}% - Limited Time!</p>
+      <p style="margin:10px 0 0;color:#10b981;font-size:16px;font-weight:bold;">${t.priceDropSave(percentageOff)}</p>
     </div>`;
 }
 
+// ─── Build back-in-stock email HTML ──────────────────────────
+function buildBackInStockEmail(params) {
+  const { productTitle, displayName, productImg, currency, price, clickUrl, openUrl, countdownBadge, shopName, includePrice, t } = params;
+  return `
+    <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
+      <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
+        <tr><td style="padding:40px;text-align:center;">
+          <h1 style="color:#111827;font-size:28px;font-weight:800;margin:0;">${t.heading}</h1>
+          <p style="color:#6b7280;margin:10px 0 0;">${t.intro(productTitle, shopName)}</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 40px;text-align:center;">
+          <div style="background:#f9fafb;border-radius:20px;padding:30px;">
+            <img src="${productImg}" style="width:100%;max-width:250px;border-radius:12px;margin-bottom:20px;" alt="${productTitle}">
+            <h2 style="color:#111827;margin:0 0 8px;">${productTitle}</h2>
+            <p style="color:#6b7280;margin:0 0 12px;">${displayName}</p>
+            ${includePrice ? `<p style="font-size:24px;font-weight:900;color:#4f46e5;margin:0 0 16px;">${currency} ${price}</p>` : ''}
+            ${countdownBadge}
+            <a href="${clickUrl}" style="display:inline-block;background:#111827;color:#fff;padding:16px 40px;border-radius:12px;text-decoration:none;font-weight:bold;margin-top:10px;">${t.cta}</a>
+          </div>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px;text-align:center;">
+          <p style="color:#9ca3af;font-size:12px;margin:0;">${t.footer}</p>
+        </td></tr>
+      </table>
+      <img src="${openUrl}" width="1" height="1" style="display:none;" alt="">
+    </div>`;
+}
+
+// ─── Build price drop email HTML ──────────────────────────────
+function buildPriceDropEmail(params) {
+  const { productTitle, displayName, productImg, clickUrl, openUrl, priceDropBadge, shopName, t } = params;
+  return `
+    <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
+      <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
+        <tr><td style="padding:40px;text-align:center;">
+          <h1 style="color:#111827;font-size:28px;font-weight:800;margin:0;">${t.priceDropHead}</h1>
+          <p style="color:#6b7280;margin:10px 0 0;">The price just dropped on <strong>${shopName}</strong>.</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 40px;text-align:center;">
+          <div style="background:#f9fafb;border-radius:20px;padding:30px;">
+            <img src="${productImg}" style="width:100%;max-width:250px;border-radius:12px;margin-bottom:20px;" alt="${productTitle}">
+            <h2 style="color:#111827;margin:0 0 8px;">${productTitle}</h2>
+            <p style="color:#6b7280;margin:0 0 12px;">${displayName}</p>
+            ${priceDropBadge}
+            <a href="${clickUrl}" style="display:inline-block;background:#10b981;color:#fff;padding:16px 40px;border-radius:12px;text-decoration:none;font-weight:bold;margin-top:10px;">${t.priceDropCta}</a>
+          </div>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px;text-align:center;">
+          <p style="color:#9ca3af;font-size:12px;margin:0;">${t.footer}</p>
+        </td></tr>
+      </table>
+      <img src="${openUrl}" width="1" height="1" style="display:none;" alt="">
+    </div>`;
+}
+
+// ─── Main webhook handler ─────────────────────────────────────
 export async function action({ request }) {
   try {
     const { payload, shop, admin } = await authenticate.webhook(request);
     const inventoryItemId = String(payload.inventory_item_id);
 
-    console.log("📦 Inventory Webhook received:", {
-      inventoryItemId,
-      available: payload.available,
-      shop
-    });
+    console.log("📦 Inventory Webhook:", { inventoryItemId, available: payload.available, shop });
 
     const available = payload.available !== undefined
       ? Number(payload.available)
-      : (payload.available_adjustment !== undefined
-          ? Number(payload.available_adjustment)
-          : null);
+      : (payload.available_adjustment !== undefined ? Number(payload.available_adjustment) : null);
 
     if (available === null) {
-      console.log("⚠️ No quantity data in payload — skipping");
+      console.log("⚠️ No quantity data — skipping");
       return new Response("No quantity data", { status: 200 });
     }
 
@@ -103,44 +280,30 @@ export async function action({ request }) {
     let APP_URL = process.env.SHOPIFY_APP_URL || "";
     if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
 
-    // Fetch variant + product info from Shopify
-    console.log("🔍 Querying Shopify for inventoryItemId:", inventoryItemId);
+    // Fetch product/variant info
     const gqlResponse = await admin.graphql(`
       query getInventoryItem($id: ID!) {
         inventoryItem(id: $id) {
           sku
           variant {
-            id
-            displayName
-            price
-            product {
-              id
-              title
-              handle
-              vendor
-              featuredImage { url }
-              tags
-            }
+            id displayName price
+            product { id title handle vendor featuredImage { url } tags }
           }
         }
         shop { currencyCode name }
       }
-    `, {
-      variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` }
-    });
+    `, { variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` } });
 
     const gqlJson = await gqlResponse.json();
-
     if (gqlJson.errors) {
-      console.error("❌ GraphQL Errors:", JSON.stringify(gqlJson.errors, null, 2));
+      console.error("❌ GraphQL Errors:", JSON.stringify(gqlJson.errors));
       return new Response("GraphQL Error", { status: 200 });
     }
 
     const inv     = gqlJson.data?.inventoryItem;
     const variant = inv?.variant;
-
     if (!variant) {
-      console.log("⚠️ Variant not found for inventoryItem:", inventoryItemId);
+      console.log("⚠️ Variant not found for:", inventoryItemId);
       return new Response("Variant not found", { status: 200 });
     }
 
@@ -152,199 +315,125 @@ export async function action({ request }) {
     const productUrl     = `https://${shop}/products/${variant.product.handle}`;
     const currentPrice   = parseFloat(variant.price);
 
-    console.log(`✅ Product: ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
+    console.log(`✅ ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
 
-    // Shared OR query for subscribers
     const subscriberWhere = {
       shop,
       OR: [
-        { inventoryItemId: inventoryItemId },
+        { inventoryItemId },
         ...(variantIdClean ? [{ variantId: variantIdClean }] : [])
       ]
     };
 
-    // ============================================================
-    // CASE 1: BACK IN STOCK (available > 0)
-    // ============================================================
+    // ── CASE 1: BACK IN STOCK ──────────────────────────────────
     if (available > 0) {
-      console.log(`🟢 Product restocked (qty: ${available})`);
+      console.log(`🟢 Restocked (qty: ${available})`);
 
-      const allSubscribers = await prisma.backInStock.findMany({
-        where: subscriberWhere
-      });
+      const allSubscribers = await prisma.backInStock.findMany({ where: subscriberWhere });
+      console.log(`👥 Total: ${allSubscribers.length} | Pending: ${allSubscribers.filter(s => !s.notified).length}`);
 
-      console.log(`👥 Total subscribers: ${allSubscribers.length}`);
-
-      // ✅ Only notify those with notified: false
-      // notified: true means they were already told — don't spam them
-      // notified gets reset to false ONLY when stock goes to 0 (see CASE 2)
-      const pendingSubscribers = allSubscribers.filter(s => !s.notified);
-      console.log(`📧 Pending (not yet notified this cycle): ${pendingSubscribers.length}`);
-
-      if (pendingSubscribers.length === 0) {
-        console.log("ℹ️ All subscribers already notified — no emails sent");
-      }
-
-      // Get live stock once for all emails in this batch
       const liveStock    = await getLiveInventory(admin, inventoryItemId);
       const stockDisplay = liveStock !== null ? liveStock : available;
 
-      for (const sub of pendingSubscribers) {
-        const openUrl        = `${APP_URL}api/track-open?id=${sub.id}`;
-        const clickUrl       = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        const countdownBadge = getCountdownBadge(stockDisplay, settings.countdownThreshold || 200);
+      // Send back-in-stock emails to pending subscribers
+      for (const sub of allSubscribers.filter(s => !s.notified)) {
+        const lang         = sub.language || 'en';
+        const t            = getT(lang);
+        const openUrl      = `${APP_URL}api/track-open?id=${sub.id}`;
+        const clickUrl     = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
+        const countdown    = getCountdownBadge(stockDisplay, t, settings.countdownThreshold || 200);
 
-        const html = `
-          <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
-            <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
-              <tr><td style="padding:40px;text-align:center;">
-                <h1 style="color:#111827;font-size:28px;font-weight:800;margin:0;">🎉 Back In Stock!</h1>
-                <p style="color:#6b7280;margin:10px 0 0;">Good news! <strong>${variant.product.title}</strong> is now available at <strong>${shopName}</strong>.</p>
-              </td></tr>
-              <tr><td style="padding:0 40px 40px;text-align:center;">
-                <div style="background:#f9fafb;border-radius:20px;padding:30px;">
-                  <img src="${productImg}" style="width:100%;max-width:250px;border-radius:12px;margin-bottom:20px;" alt="${variant.product.title}">
-                  <h2 style="color:#111827;margin:0 0 8px;">${variant.product.title}</h2>
-                  <p style="color:#6b7280;margin:0 0 12px;">${variant.displayName}</p>
-                  ${settings.includePrice ? `<p style="font-size:24px;font-weight:900;color:#4f46e5;margin:0 0 16px;">${currency} ${variant.price}</p>` : ''}
-                  ${countdownBadge}
-                  <a href="${clickUrl}" style="display:inline-block;background:#111827;color:#fff;padding:16px 40px;border-radius:12px;text-decoration:none;font-weight:bold;margin-top:10px;">
-                    Buy Now
-                  </a>
-                </div>
-              </td></tr>
-              <tr><td style="padding:0 40px 30px;text-align:center;">
-                <p style="color:#9ca3af;font-size:12px;margin:0;">
-                  You're receiving this because you subscribed to back-in-stock alerts.
-                </p>
-              </td></tr>
-            </table>
-            <img src="${openUrl}" width="1" height="1" style="display:none;" alt="">
-          </div>`;
+        const html = buildBackInStockEmail({
+          productTitle:  variant.product.title,
+          displayName:   variant.displayName,
+          productImg,
+          currency,
+          price:         variant.price,
+          clickUrl, openUrl,
+          countdownBadge: countdown,
+          shopName,
+          includePrice:  settings.includePrice,
+          t
+        });
 
         const sent = await sendEmail({
           from:    `${shopName} <onboarding@resend.dev>`,
           to:      sub.email,
-          subject: `🎉 Back in Stock: ${variant.product.title}${stockDisplay <= 5 ? ' — Limited Quantity!' : ''}`,
+          subject: t.subject(variant.product.title, stockDisplay <= 5),
           html
         });
 
         if (sent) {
-          console.log(`✅ Back-in-stock email sent to ${sub.email}`);
-          // ✅ Mark as notified — stays TRUE until stock goes to 0 again
+          console.log(`✅ [${lang.toUpperCase()}] Back-in-stock email → ${sub.email}`);
           await prisma.backInStock.update({
             where: { id: sub.id },
-            data: {
-              notified:        true,   // Will only reset when available <= 0
-              subscribedPrice: sub.subscribedPrice ?? currentPrice
-            }
+            data:  { notified: true, subscribedPrice: sub.subscribedPrice ?? currentPrice }
           });
         } else {
-          console.log(`❌ Failed to send to ${sub.email}`);
+          console.log(`❌ Failed → ${sub.email}`);
         }
       }
 
-      // ─── Price Drop Check for already-notified subscribers ───
-      const notifiedSubscribers = allSubscribers.filter(s => s.notified);
-      console.log(`💰 Checking price drops for ${notifiedSubscribers.length} already-notified subscribers`);
+      // Price drop emails for already-notified subscribers
+      for (const sub of allSubscribers.filter(s => s.notified)) {
+        if (!sub.subscribedPrice || currentPrice >= sub.subscribedPrice) continue;
+        const pctOff = Math.round(((sub.subscribedPrice - currentPrice) / sub.subscribedPrice) * 100);
+        if (pctOff < 5) continue;
 
-      for (const sub of notifiedSubscribers) {
-        if (!sub.subscribedPrice || sub.subscribedPrice === 0) continue;
-        if (currentPrice >= sub.subscribedPrice) continue;
-
-        const percentageOff = Math.round(((sub.subscribedPrice - currentPrice) / sub.subscribedPrice) * 100);
-        if (percentageOff < 5) continue;
-
-        console.log(`💰 Price drop for ${sub.email}: ${sub.subscribedPrice} → ${currentPrice} (${percentageOff}%)`);
-
+        const lang     = sub.language || 'en';
+        const t        = getT(lang);
         const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        const badge    = getPriceDropBadge(
-          sub.subscribedPrice.toFixed(2),
-          currentPrice.toFixed(2),
-          currency,
-          percentageOff
-        );
+        const badge    = getPriceDropBadge(sub.subscribedPrice.toFixed(2), currentPrice.toFixed(2), currency, pctOff, t);
 
-        const html = `
-          <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
-            <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
-              <tr><td style="padding:40px;text-align:center;">
-                <h1 style="color:#111827;font-size:28px;font-weight:800;margin:0;">💰 Price Drop Alert!</h1>
-                <p style="color:#6b7280;margin:10px 0 0;">The price just dropped on <strong>${shopName}</strong>.</p>
-              </td></tr>
-              <tr><td style="padding:0 40px 40px;text-align:center;">
-                <div style="background:#f9fafb;border-radius:20px;padding:30px;">
-                  <img src="${productImg}" style="width:100%;max-width:250px;border-radius:12px;margin-bottom:20px;" alt="${variant.product.title}">
-                  <h2 style="color:#111827;margin:0 0 8px;">${variant.product.title}</h2>
-                  <p style="color:#6b7280;margin:0 0 12px;">${variant.displayName}</p>
-                  ${badge}
-                  <a href="${clickUrl}" style="display:inline-block;background:#10b981;color:#fff;padding:16px 40px;border-radius:12px;text-decoration:none;font-weight:bold;margin-top:10px;">
-                    Shop Now &amp; Save
-                  </a>
-                </div>
-              </td></tr>
-              <tr><td style="padding:0 40px 30px;text-align:center;">
-                <p style="color:#9ca3af;font-size:12px;margin:0;">
-                  You're receiving this because you subscribed to alerts for this product.
-                </p>
-              </td></tr>
-            </table>
-            <img src="${openUrl}" width="1" height="1" style="display:none;" alt="">
-          </div>`;
+        const html = buildPriceDropEmail({
+          productTitle: variant.product.title,
+          displayName:  variant.displayName,
+          productImg,
+          clickUrl, openUrl,
+          priceDropBadge: badge,
+          shopName,
+          t
+        });
 
         const sent = await sendEmail({
           from:    `${shopName} <onboarding@resend.dev>`,
           to:      sub.email,
-          subject: `💰 Price Drop: ${variant.product.title} — Save ${percentageOff}%!`,
+          subject: `💰 ${variant.product.title} — ${pctOff}% OFF`,
           html
         });
 
         if (sent) {
-          console.log(`✅ Price drop email sent to ${sub.email}`);
-          await prisma.backInStock.update({
-            where: { id: sub.id },
-            data:  { subscribedPrice: currentPrice }
-          });
-        } else {
-          console.log(`❌ Failed to send price drop email to ${sub.email}`);
+          console.log(`✅ [${lang.toUpperCase()}] Price drop email → ${sub.email}`);
+          await prisma.backInStock.update({ where: { id: sub.id }, data: { subscribedPrice: currentPrice } });
         }
       }
     }
 
-    // ============================================================
-    // CASE 2: OUT OF STOCK (available <= 0)
-    // ============================================================
+    // ── CASE 2: OUT OF STOCK ───────────────────────────────────
     else {
-      console.log("🔴 Product went out of stock (available <= 0)");
+      console.log("🔴 Out of stock");
 
-      // ✅ KEY LOGIC: Reset notified = false ONLY when stock reaches 0
-      // This is the ONLY place where notified gets reset
-      // So subscribers won't get duplicate emails while product is in stock
-      // But WILL get notified again next time it restocks
-      const resetResult = await prisma.backInStock.updateMany({
+      // Reset notified = false so next restock triggers emails again
+      const reset = await prisma.backInStock.updateMany({
         where: subscriberWhere,
         data:  { notified: false }
       });
-      console.log(`🔄 Reset notified=false for ${resetResult.count} subscribers — ready for next restock`);
+      console.log(`🔄 Reset notified=false for ${reset.count} subscribers`);
 
-      // Send admin out-of-stock alert
-      console.log("📧 Sending out-of-stock alert to admin:", settings.adminEmail);
-
+      // Admin alert (always in English)
       const adminHtml = `
         <div style="font-family:sans-serif;padding:30px;background:#fffafb;border:1px solid #fee2e2;border-radius:16px;max-width:500px;margin:20px auto;">
-          <h2 style="color:#991b1b;font-size:20px;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
+          <h2 style="color:#991b1b;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
           <div style="background:#fff;border-radius:12px;padding:20px;border:1px solid #fecaca;margin-top:15px;">
-            <p style="margin:8px 0;"><strong>Product:</strong> ${variant.product.title}</p>
-            <p style="margin:8px 0;"><strong>Variant:</strong> ${variant.displayName}</p>
-            ${settings.includeSku    ? `<p style="margin:8px 0;"><strong>SKU:</strong> ${inv.sku || 'N/A'}</p>` : ''}
-            ${settings.includeVendor ? `<p style="margin:8px 0;"><strong>Vendor:</strong> ${variant.product.vendor || 'N/A'}</p>` : ''}
-            ${settings.includePrice  ? `<p style="margin:8px 0;"><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
+            <p><strong>Product:</strong> ${variant.product.title}</p>
+            <p><strong>Variant:</strong> ${variant.displayName}</p>
+            ${settings.includeSku    ? `<p><strong>SKU:</strong> ${inv.sku || 'N/A'}</p>` : ''}
+            ${settings.includeVendor ? `<p><strong>Vendor:</strong> ${variant.product.vendor || 'N/A'}</p>` : ''}
+            ${settings.includePrice  ? `<p><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
           </div>
           <div style="margin-top:25px;text-align:center;">
-            <a href="https://${shop}/admin/products" style="background:#111827;color:#fff;padding:12px 25px;border-radius:10px;text-decoration:none;font-weight:bold;">
-              Manage Inventory
-            </a>
+            <a href="https://${shop}/admin/products" style="background:#111827;color:#fff;padding:12px 25px;border-radius:10px;text-decoration:none;font-weight:bold;">Manage Inventory</a>
           </div>
         </div>`;
 
@@ -354,16 +443,13 @@ export async function action({ request }) {
         subject: `🚨 Stock Out: ${variant.product.title}`,
         html:    adminHtml
       });
-
       console.log(sent ? "✅ Admin alert sent" : "❌ Admin alert failed");
     }
 
-    console.log("✅ Webhook processed successfully");
     return new Response("OK", { status: 200 });
 
   } catch (err) {
-    console.error("❌ Webhook Error:", err.message);
-    console.error(err.stack);
+    console.error("❌ Webhook Error:", err.message, err.stack);
     return new Response("Error", { status: 500 });
   }
 }

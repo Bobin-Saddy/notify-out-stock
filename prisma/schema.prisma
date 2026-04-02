@@ -58,17 +58,18 @@ model BackInStock {
   email           String
   variantId       String
   inventoryItemId String?
-  productId       String?          // ✅ ADD THIS
-  productTitle    String?          // ✅ ADD THIS
-  variantTitle    String?          // ✅ ADD THIS
+  productId       String?
+  productTitle    String?
+  variantTitle    String?
   notified        Boolean  @default(false)
   opened          Boolean  @default(false)
   clicked         Boolean  @default(false)
   purchased       Boolean  @default(false)
   subscribedPrice Float?
+  language        String?  @default("en")   // ← ADD THIS LINE
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
-  
+
   @@index([shop, inventoryItemId])
   @@index([shop, variantId])
 }
