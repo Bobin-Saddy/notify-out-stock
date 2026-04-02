@@ -259,6 +259,8 @@ function buildPriceDropHtml({ productTitle, displayName, productImg, clickUrl, o
 export async function action({ request }) {
   try {
     const { payload, shop, admin } = await authenticate.webhook(request);
+
+    // ✅ FIX: Always cast to String for consistent DB matching
     const inventoryItemId = String(payload.inventory_item_id);
 
     console.log("📦 Inventory Webhook:", { inventoryItemId, available: payload.available, shop });
@@ -323,14 +325,14 @@ export async function action({ request }) {
 
     console.log(`✅ Product: ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
 
-const subscriberWhere = {
-  shop,
-  OR: [
-    { inventoryItemId: String(inventoryItemId) },
-    { inventoryItemId: inventoryItemId },  // number match ke liye
-    ...(variantIdClean ? [{ variantId: String(variantIdClean) }] : [])
-  ]
-};
+    // ✅ FIX: Robust subscriberWhere — match by inventoryItemId OR variantId, both as strings
+    const subscriberWhere = {
+      shop,
+      OR: [
+        { inventoryItemId: String(inventoryItemId) },
+        ...(variantIdClean ? [{ variantId: String(variantIdClean) }] : [])
+      ]
+    };
 
     // ── CASE 1: BACK IN STOCK ──────────────────────────────────
     if (available > 0) {
@@ -341,10 +343,10 @@ const subscriberWhere = {
 
       console.log(`👥 Total: ${allSubscribers.length} | Pending: ${pending.length}`);
 
-      // ─── DEBUG: Log language for every subscriber ────────────
-      console.log("🔍 ALL SUBSCRIBER LANGUAGES:");
+      // ─── DEBUG: Log all subscribers with language ────────────
+      console.log("🔍 ALL SUBSCRIBER DETAILS:");
       allSubscribers.forEach(s => {
-        console.log(`   → id=${s.id} | email=${s.email} | language="${s.language}" (type: ${typeof s.language})`);
+        console.log(`   → id=${s.id} | email=${s.email} | language="${s.language}" | notified=${s.notified} | variantId=${s.variantId} | inventoryItemId=${s.inventoryItemId}`);
       });
       // ────────────────────────────────────────────────────────
 
@@ -357,11 +359,12 @@ const subscriberWhere = {
       // Send back-in-stock emails to pending subscribers
       for (const sub of pending) {
 
-        // ─── DEBUG: Exactly what language is being used ──────
-        console.log(`🌐 Processing subscriber id=${sub.id} | DB language="${sub.language}" | typeof="${typeof sub.language}"`);
-        const lang = sub.language || 'en';
-        console.log(`🌐 Final lang used for email: "${lang}"`);
-        // ────────────────────────────────────────────────────
+        // ✅ FIX: Robust language resolution — trim + lowercase + validate
+        const SUPPORTED_LANGS = ['en', 'hi', 'fr', 'de', 'es', 'ar', 'zh', 'ja'];
+        const rawLang  = typeof sub.language === 'string' ? sub.language.trim().toLowerCase() : '';
+        const lang     = SUPPORTED_LANGS.includes(rawLang) ? rawLang : 'en';
+
+        console.log(`🌐 Subscriber id=${sub.id} | DB language="${sub.language}" | resolved lang="${lang}"`);
 
         const t        = getT(lang);
         const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
@@ -395,7 +398,12 @@ const subscriberWhere = {
           console.log(`✅ [${lang.toUpperCase()}] Email sent → ${sub.email}`);
           await prisma.backInStock.update({
             where: { id: sub.id },
-            data:  { notified: true, subscribedPrice: sub.subscribedPrice ?? currentPrice }
+            data:  {
+              notified:        true,
+              // ✅ FIX: Also persist resolved language back to DB to keep it clean
+              language:        lang,
+              subscribedPrice: sub.subscribedPrice ?? currentPrice
+            }
           });
         } else {
           console.log(`❌ Failed → ${sub.email}`);
@@ -409,7 +417,11 @@ const subscriberWhere = {
         const pctOff = Math.round(((sub.subscribedPrice - currentPrice) / sub.subscribedPrice) * 100);
         if (pctOff < 5) continue;
 
-        const lang     = sub.language || 'en';
+        // ✅ FIX: Same robust language resolution for price drop emails
+        const SUPPORTED_LANGS = ['en', 'hi', 'fr', 'de', 'es', 'ar', 'zh', 'ja'];
+        const rawLang  = typeof sub.language === 'string' ? sub.language.trim().toLowerCase() : '';
+        const lang     = SUPPORTED_LANGS.includes(rawLang) ? rawLang : 'en';
+
         const t        = getT(lang);
         const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
@@ -436,7 +448,10 @@ const subscriberWhere = {
 
         if (sent) {
           console.log(`✅ [${lang.toUpperCase()}] Price drop email → ${sub.email}`);
-          await prisma.backInStock.update({ where: { id: sub.id }, data: { subscribedPrice: currentPrice } });
+          await prisma.backInStock.update({
+            where: { id: sub.id },
+            data:  { subscribedPrice: currentPrice, language: lang }
+          });
         }
       }
     }

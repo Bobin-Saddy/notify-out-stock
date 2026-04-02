@@ -23,7 +23,7 @@ export const action = async ({ request }) => {
     const {
       email, variantId, shop,
       productName, variantTitle, currentPrice, productId,
-      language  // ← new field from multilang modal
+      language
     } = body;
 
     // ✅ Validate required fields
@@ -43,9 +43,12 @@ export const action = async ({ request }) => {
       );
     }
 
-    // ✅ Sanitize language — default to 'en' if not valid
-    const SUPPORTED_LANGS = ['en','hi','fr','de','es','ar','zh','ja'];
-    const finalLanguage = SUPPORTED_LANGS.includes(language) ? language : 'en';
+    // ✅ FIX: Robust language sanitization — trim + lowercase + validate
+    const SUPPORTED_LANGS = ['en', 'hi', 'fr', 'de', 'es', 'ar', 'zh', 'ja'];
+    const rawLang     = typeof language === 'string' ? language.trim().toLowerCase() : '';
+    const finalLanguage = SUPPORTED_LANGS.includes(rawLang) ? rawLang : 'en';
+
+    console.log(`🌐 Language received: "${language}" → resolved: "${finalLanguage}"`);
 
     // ✅ Fetch LIVE variant details from Shopify GraphQL
     console.log("🔍 FETCHING LIVE VARIANT DETAILS for variantId:", variantId);
@@ -103,10 +106,16 @@ export const action = async ({ request }) => {
     });
 
     // ✅ Always get IDs from Shopify (never trust client)
-    const rawInventoryId      = variant.inventoryItem?.id;
-    const finalInventoryItemId = rawInventoryId ? rawInventoryId.split('/').pop() : null;
+    const rawInventoryId       = variant.inventoryItem?.id;
+    // ✅ FIX: Store as plain string — strip gid:// prefix
+    const finalInventoryItemId = rawInventoryId ? String(rawInventoryId.split('/').pop()) : null;
     const rawProductId         = variant.product?.id;
     const finalProductId       = productId || (rawProductId ? rawProductId.split('/').pop() : null);
+
+    // ✅ FIX: Store variantId as plain numeric string — strip gid:// prefix if present
+    const finalVariantId       = String(variantId).includes('/')
+      ? String(variantId).split('/').pop()
+      : String(variantId);
 
     const finalProductTitle    = productName || variant.product?.title || "Unknown Product";
     const finalVariantTitle    = variantTitle || variant.title || variant.displayName || "Default";
@@ -114,13 +123,19 @@ export const action = async ({ request }) => {
       ? parseFloat(currentPrice)
       : (variant.price ? parseFloat(variant.price) : 0);
 
-    // ✅ Check for existing subscription
+    console.log("🔑 IDs resolved:", {
+      finalVariantId,
+      finalInventoryItemId,
+      finalLanguage
+    });
+
+    // ✅ Check for existing subscription — match by variantId OR inventoryItemId
     const existing = await prisma.backInStock.findFirst({
       where: {
         email, shop,
         OR: [
-          { variantId: String(variantId) },
-          ...(finalInventoryItemId ? [{ inventoryItemId: String(finalInventoryItemId) }] : [])
+          { variantId: finalVariantId },
+          ...(finalInventoryItemId ? [{ inventoryItemId: finalInventoryItemId }] : [])
         ]
       }
     });
@@ -142,6 +157,9 @@ export const action = async ({ request }) => {
             notified:        false,
             subscribedPrice: finalSubscribedPrice,
             language:        finalLanguage,
+            // ✅ FIX: Also sync variantId and inventoryItemId in case they were stored differently before
+            variantId:       finalVariantId,
+            inventoryItemId: finalInventoryItemId,
             createdAt:       new Date()
           }
         });
@@ -151,11 +169,16 @@ export const action = async ({ request }) => {
         );
       }
 
-      // CASE C: Already pending → update language preference
+      // CASE C: Already pending → update language preference + sync IDs
       if (!existing.notified) {
         await prisma.backInStock.update({
           where: { id: existing.id },
-          data:  { language: finalLanguage }
+          data:  {
+            language:        finalLanguage,
+            // ✅ FIX: Sync IDs so webhook can find this record correctly
+            variantId:       finalVariantId,
+            inventoryItemId: finalInventoryItemId
+          }
         });
         return new Response(
           JSON.stringify({ success: true, message: "You're already on the waitlist! 🔔" }),
@@ -172,12 +195,12 @@ export const action = async ({ request }) => {
       );
     }
 
-    // ✅ Create new subscription with language
+    // ✅ Create new subscription with language and clean IDs
     const subscription = await prisma.backInStock.create({
       data: {
         email,
-        variantId:       String(variantId),
-        inventoryItemId: finalInventoryItemId ? String(finalInventoryItemId) : null,
+        variantId:       finalVariantId,
+        inventoryItemId: finalInventoryItemId,
         productId:       finalProductId ? String(finalProductId) : null,
         productTitle:    finalProductTitle,
         variantTitle:    finalVariantTitle,
