@@ -1,12 +1,11 @@
 {% comment %}
-  Only show notify button when product variant is OUT OF STOCK
+  Notify Me Button — shows ONLY when variant is truly out of stock
   File: notify-me-button.liquid
-  Logic:
-    - notified: false + out of stock  → show button (subscribe karo)
-    - notified: true  + in stock      → button hide (already notified, product available)
-    - notified: true  + out of stock  → show button (product phir se OOS, re-subscribe)
-    - notified: false + in stock      → button hide (product available, no need)
-  Server-side (proxy/subscribe) handles all state validation.
+
+  Stock detection logic (3 layers):
+  1. inventoryQuantity <= 0  (primary — actual count)
+  2. available == false      (Shopify flag)
+  3. inventoryManagement check (agar "none" ho toh never show)
 {% endcomment %}
 
 <style>
@@ -90,7 +89,7 @@
   transition: 0.3s;
 }
 
-.bis-submit-{{ block.id }}:hover   { opacity: 0.9; transform: translateY(-1px); }
+.bis-submit-{{ block.id }}:hover    { opacity: 0.9; transform: translateY(-1px); }
 .bis-submit-{{ block.id }}:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .bis-message-{{ block.id }} {
@@ -112,7 +111,7 @@
   font-size: 16px;
   font-weight: bold;
   transition: all 0.3s;
-  display: none; /* JS controls visibility */
+  display: none; /* JS controls this */
 }
 
 .bis-btn-{{ block.id }}:hover {
@@ -154,47 +153,83 @@
   const emailInput = document.querySelector('.bis-email-'   + BLOCK_ID);
   const messageEl  = document.querySelector('.bis-message-' + BLOCK_ID);
 
+  // ✅ Full variant data from Liquid — includes inventoryQuantity & inventoryManagement
   const allVariants = {{ product.variants | json }};
 
-  // ─── Variant Detection ────────────────────────────────────────
+  // ─── Get currently selected variant ──────────────────────────
   function getSelectedVariantId() {
-    const params = new URLSearchParams(window.location.search);
+    // Method 1: URL param (most reliable for Dawn/Debut)
+    const params    = new URLSearchParams(window.location.search);
     const idFromUrl = params.get('variant');
     if (idFromUrl) return parseInt(idFromUrl);
 
+    // Method 2: Native select / radio
     const selectEl = document.querySelector(
-      'select[name="id"], input[name="id"]:checked, [data-section-id] select[name="id"]'
+      'select[name="id"], input[name="id"]:checked'
     );
-    if (selectEl) return parseInt(selectEl.value);
+    if (selectEl && selectEl.value) return parseInt(selectEl.value);
 
-    const firstAvailable = allVariants.find(v => v.available);
-    return firstAvailable ? firstAvailable.id : (allVariants[0]?.id ?? null);
+    // Method 3: First variant fallback
+    return allVariants[0]?.id ?? null;
   }
 
   function getSelectedVariant() {
     const id = getSelectedVariantId();
+    if (!id) return null;
     return allVariants.find(v => v.id === id) || null;
   }
 
-  function isCurrentVariantOutOfStock() {
-    const variant = getSelectedVariant();
+  // ─── Core stock check (3-layer) ──────────────────────────────
+  function isTrulyOutOfStock(variant) {
     if (!variant) return false;
-    // ✅ Show button ONLY when variant is unavailable (out of stock)
+
+    // Layer 1: inventory_management === "none" means Shopify does NOT
+    // track inventory for this product — always treat as in-stock
+    // (inventory_management comes as null in JS when set to "none")
+    if (!variant.inventory_management || variant.inventory_management === 'none') {
+      return false;
+    }
+
+    // Layer 2: inventory_policy === "continue" means oversell allowed
+    // Product is technically "available" even at 0 qty — do NOT show button
+    if (variant.inventory_policy === 'continue') {
+      return false;
+    }
+
+    // Layer 3: Check actual quantity
+    // inventory_quantity is the real number (can be 0 or negative)
+    const qty = variant.inventory_quantity;
+    if (typeof qty === 'number' && qty <= 0) {
+      return true;
+    }
+
+    // Layer 4: Fallback to Shopify's available flag
     return !variant.available;
   }
 
-  // ─── Button Visibility ────────────────────────────────────────
+  // ─── Update button visibility ─────────────────────────────────
   function updateButtonVisibility() {
-    const outOfStock = isCurrentVariantOutOfStock();
+    const variant    = getSelectedVariant();
+    const outOfStock = isTrulyOutOfStock(variant);
+
+    console.log('[BIS] Variant check:', {
+      id:                   variant?.id,
+      inventory_quantity:   variant?.inventory_quantity,
+      inventory_management: variant?.inventory_management,
+      inventory_policy:     variant?.inventory_policy,
+      available:            variant?.available,
+      outOfStock
+    });
+
     btn.style.display = outOfStock ? 'block' : 'none';
 
-    // Close modal if product came back in stock while modal was open
+    // Close modal if product came back in stock while open
     if (!outOfStock && modal.style.display === 'block') {
       closeModal();
     }
   }
 
-  // ─── Modal Helpers ────────────────────────────────────────────
+  // ─── Modal helpers ────────────────────────────────────────────
   function closeModal() {
     modal.style.display   = 'none';
     overlay.style.display = 'none';
@@ -207,36 +242,37 @@
     messageEl.className   = 'bis-message-' + BLOCK_ID + (isError ? ' error' : ' success');
   }
 
-  // ─── Event Listeners ─────────────────────────────────────────
+  // ─── Event listeners ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', updateButtonVisibility);
 
-  // Native select / radio change
+  // Native variant selector change
   document.addEventListener('change', function(e) {
     if (e.target.matches('select[name="id"]') || e.target.matches('input[name="id"]')) {
       updateButtonVisibility();
     }
   });
 
-  // Shopify theme events (Dawn, etc.)
+  // Shopify theme events
   document.addEventListener('variant:change',       updateButtonVisibility);
   document.addEventListener('variantChange',         updateButtonVisibility);
   document.addEventListener('shopify:section:load', updateButtonVisibility);
   window.addEventListener('popstate',               updateButtonVisibility);
 
-  // Polling fallback — only when modal is closed (perf safe)
+  // Polling fallback (catches themes that don't fire events)
   let lastVariantId = null;
   setInterval(function() {
-    if (modal.style.display === 'block') return;
+    if (modal.style.display === 'block') return; // skip while modal open
     const currentId = getSelectedVariantId();
     if (currentId !== lastVariantId) {
       lastVariantId = currentId;
       updateButtonVisibility();
     }
-  }, 500);
+  }, 400);
 
-  // Open modal
+  // ─── Open modal ───────────────────────────────────────────────
   btn.onclick = function() {
-    if (!isCurrentVariantOutOfStock()) return; // double-check
+    const variant = getSelectedVariant();
+    if (!isTrulyOutOfStock(variant)) return; // double check before opening
     modal.style.display   = 'block';
     overlay.style.display = 'block';
     emailInput.value      = '';
@@ -259,6 +295,13 @@
     const variant = getSelectedVariant();
     if (!variant) { showMessage('Product variant not found', true); return; }
 
+    // Final client-side stock check before submitting
+    if (!isTrulyOutOfStock(variant)) {
+      showMessage('This product is currently in stock!', true);
+      setTimeout(closeModal, 2000);
+      return;
+    }
+
     submitBtn.disabled    = true;
     submitBtn.textContent = 'Subscribing...';
 
@@ -270,8 +313,8 @@
       const variantTitle = variant.title || 'Default';
       const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
 
-      // Note: inventoryItemId is intentionally NOT sent from client
-      // Server (proxy/subscribe) always fetches it from Shopify GraphQL
+      // inventoryItemId intentionally excluded —
+      // server always fetches fresh from Shopify GraphQL
       const requestData = {
         email,
         variantId,
@@ -282,7 +325,7 @@
         currentPrice
       };
 
-      console.log("📤 Sending subscription request:", requestData);
+      console.log('[BIS] Sending subscribe request:', requestData);
 
       const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
         method:  'POST',
@@ -293,13 +336,13 @@
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
-        console.error("Non-JSON response:", text);
+        console.error('[BIS] Non-JSON response:', text);
         showMessage('Server error. Please try again.', true);
         return;
       }
 
       const data = await response.json();
-      console.log("📥 Response:", data);
+      console.log('[BIS] Response:', data);
 
       if (data.success) {
         showMessage(data.message || "✅ Subscribed! We'll notify you when it's back.", false);
@@ -309,7 +352,7 @@
         showMessage(data.message || data.error || 'Subscription failed. Please try again.', true);
       }
     } catch (error) {
-      console.error('BIS Error:', error);
+      console.error('[BIS] Error:', error);
       showMessage('Network error. Please try again.', true);
     } finally {
       submitBtn.disabled    = false;
@@ -328,13 +371,13 @@
   "name": "Notify Me Button",
   "target": "section",
   "settings": [
-    { "type": "text", "id": "button_text",       "label": "Button Text",            "default": "Notify me when available" },
-    { "type": "text", "id": "headertext",         "label": "Header Text",            "default": "Get Notified" },
-    { "type": "text", "id": "subheadertext",      "label": "Subheader Text",         "default": "Enter your email and we'll notify you when this product is back in stock." },
-    { "type": "text", "id": "email_placeholder",  "label": "Email Placeholder",      "default": "Enter your email" },
-    { "type": "text", "id": "subscribe_text",     "label": "Subscribe Button Text",  "default": "Notify Me" },
-    { "type": "color","id": "popup_bg_color",     "label": "Popup Background Color", "default": "#ffffff" },
-    { "type": "color","id": "popup_text_color",   "label": "Popup Text Color",       "default": "#000000" },
+    { "type": "text",  "id": "button_text",      "label": "Button Text",            "default": "Notify me when available" },
+    { "type": "text",  "id": "headertext",        "label": "Header Text",            "default": "Get Notified" },
+    { "type": "text",  "id": "subheadertext",     "label": "Subheader Text",         "default": "Enter your email and we'll notify you when this product is back in stock." },
+    { "type": "text",  "id": "email_placeholder", "label": "Email Placeholder",      "default": "Enter your email" },
+    { "type": "text",  "id": "subscribe_text",    "label": "Subscribe Button Text",  "default": "Notify Me" },
+    { "type": "color", "id": "popup_bg_color",    "label": "Popup Background Color", "default": "#ffffff" },
+    { "type": "color", "id": "popup_text_color",  "label": "Popup Text Color",       "default": "#000000" },
     {
       "type": "select",
       "id": "popup_font",
