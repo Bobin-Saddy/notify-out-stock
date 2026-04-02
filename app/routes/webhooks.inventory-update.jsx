@@ -127,9 +127,7 @@ async function sendEmail(emailData) {
   }
 }
 
-// ─── ✅ FIXED: getLiveInventory — uses quantities(names:["available"]) ──
-// Shopify 2025-04+ API ne available field hata diya InventoryLevel se
-// Ab quantities array use karna padta hai
+// ─── getLiveInventory — uses quantities(names:["available"]) ──
 async function getLiveInventory(admin, inventoryItemId) {
   try {
     const response = await admin.graphql(`
@@ -158,7 +156,6 @@ async function getLiveInventory(admin, inventoryItemId) {
       return null;
     }
 
-    // Sum up available quantity across all locations
     const levels = json.data?.inventoryItem?.inventoryLevels?.edges || [];
     let totalAvailable = 0;
 
@@ -343,7 +340,14 @@ export async function action({ request }) {
 
       console.log(`👥 Total: ${allSubscribers.length} | Pending: ${pending.length}`);
 
-      // ✅ getLiveInventory — fixed for new Shopify API
+      // ─── DEBUG: Log language for every subscriber ────────────
+      console.log("🔍 ALL SUBSCRIBER LANGUAGES:");
+      allSubscribers.forEach(s => {
+        console.log(`   → id=${s.id} | email=${s.email} | language="${s.language}" (type: ${typeof s.language})`);
+      });
+      // ────────────────────────────────────────────────────────
+
+      // getLiveInventory
       const liveStock    = await getLiveInventory(admin, inventoryItemId);
       const stockDisplay = liveStock !== null ? liveStock : available;
 
@@ -351,7 +355,13 @@ export async function action({ request }) {
 
       // Send back-in-stock emails to pending subscribers
       for (const sub of pending) {
-        const lang     = sub.language || 'en';
+
+        // ─── DEBUG: Exactly what language is being used ──────
+        console.log(`🌐 Processing subscriber id=${sub.id} | DB language="${sub.language}" | typeof="${typeof sub.language}"`);
+        const lang = sub.language || 'en';
+        console.log(`🌐 Final lang used for email: "${lang}"`);
+        // ────────────────────────────────────────────────────
+
         const t        = getT(lang);
         const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
