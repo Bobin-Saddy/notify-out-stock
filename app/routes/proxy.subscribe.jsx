@@ -20,7 +20,7 @@ export const action = async ({ request }) => {
     const body = await request.json();
     console.log("📧 RAW REQUEST BODY:", JSON.stringify(body, null, 2));
 
-    const { email, variantId, shop, productName, variantTitle, currentPrice, productId, inventoryItemId } = body;
+    const { email, variantId, shop, productName, variantTitle, currentPrice, productId } = body;
 
     // ✅ Validate required fields
     if (!email || !variantId || !shop) {
@@ -40,7 +40,7 @@ export const action = async ({ request }) => {
     }
 
     // ✅ Fetch LIVE variant details from Shopify GraphQL
-    console.log("🔍 FETCHING LIVE VARIANT DETAILS...");
+    console.log("🔍 FETCHING LIVE VARIANT DETAILS for variantId:", variantId);
     const response = await admin.graphql(`
       query getVariantDetails($id: ID!) {
         productVariant(id: $id) {
@@ -85,13 +85,10 @@ export const action = async ({ request }) => {
       );
     }
 
-    // ✅ REAL-TIME STOCK CHECK — Server side pe verify karo
-    // Shopify GraphQL se live inventoryQuantity aata hai
+    // ✅ REAL-TIME STOCK CHECK
     const isShopifyManaged = variant.inventoryManagement === "SHOPIFY";
     const liveQty = variant.inventoryQuantity ?? 0;
-    const isOutOfStock = isShopifyManaged
-      ? liveQty <= 0
-      : !variant.available;
+    const isOutOfStock = isShopifyManaged ? liveQty <= 0 : !variant.available;
 
     console.log("📊 LIVE STOCK CHECK:", {
       inventoryManagement: variant.inventoryManagement,
@@ -100,7 +97,6 @@ export const action = async ({ request }) => {
       isOutOfStock
     });
 
-    // ❌ Agar product IN STOCK hai toh subscription mat banao
     if (!isOutOfStock) {
       console.log("⚠️ PRODUCT IS IN STOCK — Subscription rejected");
       return new Response(
@@ -114,20 +110,28 @@ export const action = async ({ request }) => {
 
     console.log("✅ CONFIRMED OUT OF STOCK — Proceeding with subscription");
 
-    // Extract IDs
-    const rawInventoryId = variant.inventoryItem?.id;
-    const finalInventoryItemId = inventoryItemId || (rawInventoryId ? rawInventoryId.split('/').pop() : null);
+    // ✅ Extract inventoryItemId from Shopify response (most reliable source)
+    // Never rely on client-sent inventoryItemId — always use Shopify GraphQL value
+    const rawInventoryId = variant.inventoryItem?.id; // "gid://shopify/InventoryItem/12345"
+    const finalInventoryItemId = rawInventoryId ? rawInventoryId.split('/').pop() : null;
 
-    const rawProductId = variant.product?.id;
+    const rawProductId = variant.product?.id; // "gid://shopify/Product/99999"
     const finalProductId = productId || (rawProductId ? rawProductId.split('/').pop() : null);
 
-    const finalProductTitle = productName || variant.product?.title || "Unknown Product";
-    const finalVariantTitle = variantTitle || variant.title || variant.displayName || "Default";
+    const finalProductTitle  = productName || variant.product?.title || "Unknown Product";
+    const finalVariantTitle  = variantTitle || variant.title || variant.displayName || "Default";
     const finalSubscribedPrice = currentPrice
       ? parseFloat(currentPrice)
       : (variant.price ? parseFloat(variant.price) : 0);
 
-    // ✅ Check if already subscribed
+    console.log("📦 SAVING WITH:", {
+      variantId: String(variantId),
+      inventoryItemId: finalInventoryItemId,   // Should never be null now
+      productId: finalProductId,
+      productTitle: finalProductTitle,
+    });
+
+    // ✅ Check if already subscribed — check both variantId AND inventoryItemId
     const existing = await prisma.backInStock.findFirst({
       where: {
         email,
@@ -150,23 +154,29 @@ export const action = async ({ request }) => {
       );
     }
 
-    // ✅ Create subscription
-    const subscriptionData = {
-      email,
-      variantId: String(variantId),
-      inventoryItemId: finalInventoryItemId ? String(finalInventoryItemId) : null,
-      productId: finalProductId ? String(finalProductId) : null,
-      productTitle: finalProductTitle,
-      variantTitle: finalVariantTitle,
-      subscribedPrice: finalSubscribedPrice,
-      shop,
-      notified: false,
-      createdAt: new Date()
-    };
+    // ✅ Create subscription — inventoryItemId always from Shopify GraphQL
+    const subscription = await prisma.backInStock.create({
+      data: {
+        email,
+        variantId:       String(variantId),
+        inventoryItemId: finalInventoryItemId ? String(finalInventoryItemId) : null,
+        productId:       finalProductId ? String(finalProductId) : null,
+        productTitle:    finalProductTitle,
+        variantTitle:    finalVariantTitle,
+        subscribedPrice: finalSubscribedPrice,
+        shop,
+        notified:        false,
+        createdAt:       new Date()
+      }
+    });
 
-    const subscription = await prisma.backInStock.create({ data: subscriptionData });
-
-    console.log("✅ SUBSCRIPTION CREATED:", subscription.id);
+    console.log("✅ SUBSCRIPTION CREATED:", {
+      id:              subscription.id,
+      email:           subscription.email,
+      variantId:       subscription.variantId,
+      inventoryItemId: subscription.inventoryItemId,  // Log karo — should not be null
+      productTitle:    subscription.productTitle,
+    });
     console.log("=".repeat(80));
 
     return new Response(
@@ -174,8 +184,8 @@ export const action = async ({ request }) => {
         success: true,
         message: "Successfully subscribed! We'll notify you when it's back in stock.",
         data: {
-          id: subscription.id,
-          email: subscription.email,
+          id:           subscription.id,
+          email:        subscription.email,
           productTitle: subscription.productTitle,
           variantTitle: subscription.variantTitle
         }
@@ -189,7 +199,7 @@ export const action = async ({ request }) => {
     return new Response(
       JSON.stringify({
         success: false,
-        error: "Failed to subscribe. Please try again.",
+        error:   "Failed to subscribe. Please try again.",
         details: err.message
       }),
       { status: 500, headers: { "Content-Type": "application/json" } }
