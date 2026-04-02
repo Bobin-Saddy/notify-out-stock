@@ -323,13 +323,14 @@ export async function action({ request }) {
 
     console.log(`✅ Product: ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
 
-    const subscriberWhere = {
-      shop,
-      OR: [
-        { inventoryItemId },
-        ...(variantIdClean ? [{ variantId: variantIdClean }] : [])
-      ]
-    };
+const subscriberWhere = {
+  shop,
+  OR: [
+    { inventoryItemId: String(inventoryItemId) },
+    { inventoryItemId: inventoryItemId },  // number match ke liye
+    ...(variantIdClean ? [{ variantId: String(variantIdClean) }] : [])
+  ]
+};
 
     // ── CASE 1: BACK IN STOCK ──────────────────────────────────
     if (available > 0) {
