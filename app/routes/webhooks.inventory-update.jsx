@@ -2,7 +2,7 @@
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
-// ─── Email translations for back-in-stock emails ──────────────
+// ─── Email translations ───────────────────────────────────────
 const EMAIL_TRANSLATIONS = {
   en: {
     subject:       (title, limited) => `🎉 Back in Stock: ${title}${limited ? ' — Limited Quantity!' : ''}`,
@@ -10,14 +10,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `Good news! <strong>${title}</strong> is now available at <strong>${shop}</strong>.`,
     cta:           'Buy Now',
     footer:        "You're receiving this because you subscribed to back-in-stock alerts.",
-    urgencyOnly:   'Only',
-    urgencyJust:   'Just',
-    urgencyLeft:   'Left in Stock!',
+    urgencyOnly:   'Only', urgencyJust: 'Just', urgencyLeft: 'Left in Stock!',
     urgencyHurry:  'Hurry before it sells out again',
     priceDropHead: '💰 Price Drop Alert!',
     priceDropSave: (pct) => `Save ${pct}% - Limited Time!`,
     priceDropCta:  'Shop Now & Save',
-    adminSubject:  (title) => `🚨 Stock Out: ${title}`,
   },
   hi: {
     subject:       (title, limited) => `🎉 वापस स्टॉक में: ${title}${limited ? ' — सीमित मात्रा!' : ''}`,
@@ -25,14 +22,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `अच्छी खबर! <strong>${title}</strong> अब <strong>${shop}</strong> पर उपलब्ध है।`,
     cta:           'अभी खरीदें',
     footer:        'आपको यह इसलिए मिल रहा है क्योंकि आपने स्टॉक अलर्ट के लिए सदस्यता ली थी।',
-    urgencyOnly:   'केवल',
-    urgencyJust:   'सिर्फ',
-    urgencyLeft:   'बचे हैं!',
+    urgencyOnly:   'केवल', urgencyJust: 'सिर्फ', urgencyLeft: 'बचे हैं!',
     urgencyHurry:  'जल्दी करें, फिर से बिकने से पहले!',
     priceDropHead: '💰 मूल्य में गिरावट!',
     priceDropSave: (pct) => `${pct}% बचाएं - सीमित समय!`,
     priceDropCta:  'अभी खरीदें और बचाएं',
-    adminSubject:  (title) => `🚨 स्टॉक खत्म: ${title}`,
   },
   fr: {
     subject:       (title, limited) => `🎉 De retour en stock : ${title}${limited ? ' — Quantité limitée !' : ''}`,
@@ -40,14 +34,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `Bonne nouvelle ! <strong>${title}</strong> est maintenant disponible sur <strong>${shop}</strong>.`,
     cta:           'Acheter Maintenant',
     footer:        "Vous recevez ceci parce que vous vous êtes abonné aux alertes de réapprovisionnement.",
-    urgencyOnly:   'Seulement',
-    urgencyJust:   'Plus que',
-    urgencyLeft:   'en stock !',
+    urgencyOnly:   'Seulement', urgencyJust: 'Plus que', urgencyLeft: 'en stock !',
     urgencyHurry:  'Dépêchez-vous avant la rupture !',
     priceDropHead: '💰 Alerte Baisse de Prix !',
     priceDropSave: (pct) => `Économisez ${pct}% - Temps limité !`,
     priceDropCta:  'Achetez et Économisez',
-    adminSubject:  (title) => `🚨 Rupture de stock : ${title}`,
   },
   de: {
     subject:       (title, limited) => `🎉 Wieder verfügbar: ${title}${limited ? ' — Begrenzte Menge!' : ''}`,
@@ -55,14 +46,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `Gute Neuigkeiten! <strong>${title}</strong> ist jetzt bei <strong>${shop}</strong> verfügbar.`,
     cta:           'Jetzt Kaufen',
     footer:        "Sie erhalten dies, weil Sie Benachrichtigungen abonniert haben.",
-    urgencyOnly:   'Nur noch',
-    urgencyJust:   'Nur',
-    urgencyLeft:   'auf Lager!',
+    urgencyOnly:   'Nur noch', urgencyJust: 'Nur', urgencyLeft: 'auf Lager!',
     urgencyHurry:  'Beeilen Sie sich, bevor es ausverkauft ist!',
     priceDropHead: '💰 Preissenkung!',
     priceDropSave: (pct) => `${pct}% sparen - Begrenzte Zeit!`,
     priceDropCta:  'Jetzt kaufen & sparen',
-    adminSubject:  (title) => `🚨 Ausverkauft: ${title}`,
   },
   es: {
     subject:       (title, limited) => `🎉 De vuelta en stock: ${title}${limited ? ' — ¡Cantidad limitada!' : ''}`,
@@ -70,14 +58,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `¡Buenas noticias! <strong>${title}</strong> ya está disponible en <strong>${shop}</strong>.`,
     cta:           'Comprar Ahora',
     footer:        "Recibes esto porque te suscribiste a las alertas de reposición.",
-    urgencyOnly:   'Solo',
-    urgencyJust:   'Solo',
-    urgencyLeft:   '¡en stock!',
+    urgencyOnly:   'Solo', urgencyJust: 'Solo', urgencyLeft: '¡en stock!',
     urgencyHurry:  '¡Date prisa antes de que se agote!',
     priceDropHead: '💰 ¡Alerta de Bajada de Precio!',
     priceDropSave: (pct) => `¡Ahorra ${pct}% - Tiempo limitado!`,
     priceDropCta:  'Compra y Ahorra',
-    adminSubject:  (title) => `🚨 Sin stock: ${title}`,
   },
   ar: {
     subject:       (title, limited) => `🎉 عاد إلى المخزون: ${title}${limited ? ' — كمية محدودة!' : ''}`,
@@ -85,14 +70,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `أخبار رائعة! <strong>${title}</strong> متاح الآن في <strong>${shop}</strong>.`,
     cta:           'اشترِ الآن',
     footer:        "تلقيت هذا لأنك اشتركت في تنبيهات إعادة التخزين.",
-    urgencyOnly:   'فقط',
-    urgencyJust:   'فقط',
-    urgencyLeft:   'في المخزون!',
+    urgencyOnly:   'فقط', urgencyJust: 'فقط', urgencyLeft: 'في المخزون!',
     urgencyHurry:  'أسرع قبل نفاد المخزون!',
     priceDropHead: '💰 تنبيه انخفاض السعر!',
     priceDropSave: (pct) => `وفر ${pct}% - لفترة محدودة!`,
     priceDropCta:  'تسوق الآن ووفّر',
-    adminSubject:  (title) => `🚨 نفاد المخزون: ${title}`,
   },
   zh: {
     subject:       (title, limited) => `🎉 已补货：${title}${limited ? ' — 数量有限！' : ''}`,
@@ -100,14 +82,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `好消息！<strong>${title}</strong> 现在已在 <strong>${shop}</strong> 上架。`,
     cta:           '立即购买',
     footer:        "您收到此邮件是因为您订阅了补货提醒。",
-    urgencyOnly:   '仅剩',
-    urgencyJust:   '仅剩',
-    urgencyLeft:   '件！',
+    urgencyOnly:   '仅剩', urgencyJust: '仅剩', urgencyLeft: '件！',
     urgencyHurry:  '快抢，售完为止！',
     priceDropHead: '💰 降价提醒！',
     priceDropSave: (pct) => `节省 ${pct}% — 限时优惠！`,
     priceDropCta:  '立即抢购省钱',
-    adminSubject:  (title) => `🚨 缺货：${title}`,
   },
   ja: {
     subject:       (title, limited) => `🎉 在庫復活：${title}${limited ? ' — 数量限定！' : ''}`,
@@ -115,14 +94,11 @@ const EMAIL_TRANSLATIONS = {
     intro:         (title, shop) => `嬉しいお知らせです！<strong>${title}</strong> が <strong>${shop}</strong> で再入荷しました。`,
     cta:           '今すぐ購入',
     footer:        "このメールは在庫復活通知にご登録いただいたためお送りしています。",
-    urgencyOnly:   'あと',
-    urgencyJust:   'あと',
-    urgencyLeft:   '点のみ！',
+    urgencyOnly:   'あと', urgencyJust: 'あと', urgencyLeft: '点のみ！',
     urgencyHurry:  'お早めに！売り切れる前に！',
     priceDropHead: '💰 値下げのお知らせ！',
     priceDropSave: (pct) => `${pct}% OFF — 期間限定！`,
     priceDropCta:  '今すぐお得に購入',
-    adminSubject:  (title) => `🚨 在庫切れ：${title}`,
   }
 };
 
@@ -151,27 +127,60 @@ async function sendEmail(emailData) {
   }
 }
 
-// ─── Live inventory ───────────────────────────────────────────
+// ─── ✅ FIXED: getLiveInventory — uses quantities(names:["available"]) ──
+// Shopify 2025-04+ API ne available field hata diya InventoryLevel se
+// Ab quantities array use karna padta hai
 async function getLiveInventory(admin, inventoryItemId) {
   try {
     const response = await admin.graphql(`
-      query {
-        inventoryItem(id: "gid://shopify/InventoryItem/${inventoryItemId}") {
-          inventoryLevels(first: 1) {
-            edges { node { available } }
+      query getLiveStock($id: ID!) {
+        inventoryItem(id: $id) {
+          inventoryLevels(first: 5) {
+            edges {
+              node {
+                quantities(names: ["available"]) {
+                  name
+                  quantity
+                }
+              }
+            }
           }
         }
       }
-    `);
+    `, {
+      variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` }
+    });
+
     const json = await response.json();
-    return json.data?.inventoryItem?.inventoryLevels?.edges?.[0]?.node?.available ?? 0;
+
+    if (json.errors) {
+      console.error("❌ getLiveInventory GraphQL error:", JSON.stringify(json.errors));
+      return null;
+    }
+
+    // Sum up available quantity across all locations
+    const levels = json.data?.inventoryItem?.inventoryLevels?.edges || [];
+    let totalAvailable = 0;
+
+    for (const edge of levels) {
+      const quantities = edge.node?.quantities || [];
+      for (const q of quantities) {
+        if (q.name === 'available') {
+          totalAvailable += q.quantity || 0;
+        }
+      }
+    }
+
+    console.log(`📦 Live inventory total available: ${totalAvailable}`);
+    return totalAvailable;
+
   } catch (err) {
-    console.error("❌ Inventory fetch error:", err.message);
+    console.error("❌ getLiveInventory error:", err.message);
     return null;
   }
 }
 
-// ─── Countdown badge (language-aware) ────────────────────────
+// ─── Countdown badge ──────────────────────────────────────────
 function getCountdownBadge(quantity, t, threshold = 200) {
   if (quantity === null || quantity > threshold) return '';
   const color   = quantity <= 3 ? '#dc2626' : quantity <= 7 ? '#f59e0b' : '#10b981';
@@ -183,8 +192,8 @@ function getCountdownBadge(quantity, t, threshold = 200) {
     </div>`;
 }
 
-// ─── Price drop badge (language-aware) ───────────────────────
-function getPriceDropBadge(oldPrice, newPrice, currency, percentageOff, t) {
+// ─── Price drop badge ─────────────────────────────────────────
+function getPriceDropBadge(oldPrice, newPrice, currency, pct, t) {
   return `
     <div style="background:linear-gradient(135deg,#10b98122,#10b98144);border:2px solid #10b981;border-radius:12px;padding:16px 20px;margin:20px 0;text-align:center;">
       <p style="margin:0;color:#10b981;font-weight:800;font-size:20px;">${t.priceDropHead}</p>
@@ -192,13 +201,12 @@ function getPriceDropBadge(oldPrice, newPrice, currency, percentageOff, t) {
         <span style="color:#9ca3af;font-size:16px;text-decoration:line-through;">${currency} ${oldPrice}</span>
         <span style="color:#111827;font-size:28px;font-weight:900;margin-left:10px;">${currency} ${newPrice}</span>
       </div>
-      <p style="margin:10px 0 0;color:#10b981;font-size:16px;font-weight:bold;">${t.priceDropSave(percentageOff)}</p>
+      <p style="margin:10px 0 0;color:#10b981;font-size:16px;font-weight:bold;">${t.priceDropSave(pct)}</p>
     </div>`;
 }
 
-// ─── Build back-in-stock email HTML ──────────────────────────
-function buildBackInStockEmail(params) {
-  const { productTitle, displayName, productImg, currency, price, clickUrl, openUrl, countdownBadge, shopName, includePrice, t } = params;
+// ─── Build back-in-stock email ────────────────────────────────
+function buildBackInStockHtml({ productTitle, displayName, productImg, currency, price, clickUrl, openUrl, countdownBadge, shopName, includePrice, t }) {
   return `
     <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
       <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
@@ -224,9 +232,8 @@ function buildBackInStockEmail(params) {
     </div>`;
 }
 
-// ─── Build price drop email HTML ──────────────────────────────
-function buildPriceDropEmail(params) {
-  const { productTitle, displayName, productImg, clickUrl, openUrl, priceDropBadge, shopName, t } = params;
+// ─── Build price drop email ───────────────────────────────────
+function buildPriceDropHtml({ productTitle, displayName, productImg, clickUrl, openUrl, priceDropBadge, shopName, t }) {
   return `
     <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
       <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
@@ -251,7 +258,7 @@ function buildPriceDropEmail(params) {
     </div>`;
 }
 
-// ─── Main webhook handler ─────────────────────────────────────
+// ─── Main webhook action ──────────────────────────────────────
 export async function action({ request }) {
   try {
     const { payload, shop, admin } = await authenticate.webhook(request);
@@ -280,7 +287,7 @@ export async function action({ request }) {
     let APP_URL = process.env.SHOPIFY_APP_URL || "";
     if (APP_URL && !APP_URL.endsWith('/')) APP_URL += '/';
 
-    // Fetch product/variant info
+    // Fetch variant + product info
     const gqlResponse = await admin.graphql(`
       query getInventoryItem($id: ID!) {
         inventoryItem(id: $id) {
@@ -295,6 +302,7 @@ export async function action({ request }) {
     `, { variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` } });
 
     const gqlJson = await gqlResponse.json();
+
     if (gqlJson.errors) {
       console.error("❌ GraphQL Errors:", JSON.stringify(gqlJson.errors));
       return new Response("GraphQL Error", { status: 200 });
@@ -302,8 +310,9 @@ export async function action({ request }) {
 
     const inv     = gqlJson.data?.inventoryItem;
     const variant = inv?.variant;
+
     if (!variant) {
-      console.log("⚠️ Variant not found for:", inventoryItemId);
+      console.log("⚠️ Variant not found:", inventoryItemId);
       return new Response("Variant not found", { status: 200 });
     }
 
@@ -315,7 +324,7 @@ export async function action({ request }) {
     const productUrl     = `https://${shop}/products/${variant.product.handle}`;
     const currentPrice   = parseFloat(variant.price);
 
-    console.log(`✅ ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
+    console.log(`✅ Product: ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
 
     const subscriberWhere = {
       shop,
@@ -327,32 +336,40 @@ export async function action({ request }) {
 
     // ── CASE 1: BACK IN STOCK ──────────────────────────────────
     if (available > 0) {
-      console.log(`🟢 Restocked (qty: ${available})`);
+      console.log(`🟢 Product restocked (qty: ${available})`);
 
       const allSubscribers = await prisma.backInStock.findMany({ where: subscriberWhere });
-      console.log(`👥 Total: ${allSubscribers.length} | Pending: ${allSubscribers.filter(s => !s.notified).length}`);
+      const pending        = allSubscribers.filter(s => !s.notified);
 
+      console.log(`👥 Total: ${allSubscribers.length} | Pending: ${pending.length}`);
+
+      // ✅ getLiveInventory — fixed for new Shopify API
       const liveStock    = await getLiveInventory(admin, inventoryItemId);
       const stockDisplay = liveStock !== null ? liveStock : available;
 
-      // Send back-in-stock emails to pending subscribers
-      for (const sub of allSubscribers.filter(s => !s.notified)) {
-        const lang         = sub.language || 'en';
-        const t            = getT(lang);
-        const openUrl      = `${APP_URL}api/track-open?id=${sub.id}`;
-        const clickUrl     = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        const countdown    = getCountdownBadge(stockDisplay, t, settings.countdownThreshold || 200);
+      console.log(`📊 Stock for countdown badge: ${stockDisplay}`);
 
-        const html = buildBackInStockEmail({
-          productTitle:  variant.product.title,
-          displayName:   variant.displayName,
+      // Send back-in-stock emails to pending subscribers
+      for (const sub of pending) {
+        const lang     = sub.language || 'en';
+        const t        = getT(lang);
+        const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
+        const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
+        const countdown = getCountdownBadge(stockDisplay, t, settings.countdownThreshold || 200);
+
+        console.log(`📧 Sending [${lang.toUpperCase()}] back-in-stock email to ${sub.email}`);
+
+        const html = buildBackInStockHtml({
+          productTitle:   variant.product.title,
+          displayName:    variant.displayName,
           productImg,
           currency,
-          price:         variant.price,
-          clickUrl, openUrl,
+          price:          variant.price,
+          clickUrl,
+          openUrl,
           countdownBadge: countdown,
           shopName,
-          includePrice:  settings.includePrice,
+          includePrice:   settings.includePrice !== false,
           t
         });
 
@@ -364,7 +381,7 @@ export async function action({ request }) {
         });
 
         if (sent) {
-          console.log(`✅ [${lang.toUpperCase()}] Back-in-stock email → ${sub.email}`);
+          console.log(`✅ [${lang.toUpperCase()}] Email sent → ${sub.email}`);
           await prisma.backInStock.update({
             where: { id: sub.id },
             data:  { notified: true, subscribedPrice: sub.subscribedPrice ?? currentPrice }
@@ -374,8 +391,9 @@ export async function action({ request }) {
         }
       }
 
-      // Price drop emails for already-notified subscribers
-      for (const sub of allSubscribers.filter(s => s.notified)) {
+      // Price drop check for already-notified subscribers
+      const notified = allSubscribers.filter(s => s.notified);
+      for (const sub of notified) {
         if (!sub.subscribedPrice || currentPrice >= sub.subscribedPrice) continue;
         const pctOff = Math.round(((sub.subscribedPrice - currentPrice) / sub.subscribedPrice) * 100);
         if (pctOff < 5) continue;
@@ -384,16 +402,18 @@ export async function action({ request }) {
         const t        = getT(lang);
         const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
-        const badge    = getPriceDropBadge(sub.subscribedPrice.toFixed(2), currentPrice.toFixed(2), currency, pctOff, t);
+        const badge    = getPriceDropBadge(
+          sub.subscribedPrice.toFixed(2), currentPrice.toFixed(2), currency, pctOff, t
+        );
 
-        const html = buildPriceDropEmail({
+        console.log(`💰 [${lang.toUpperCase()}] Price drop ${pctOff}% → ${sub.email}`);
+
+        const html = buildPriceDropHtml({
           productTitle: variant.product.title,
           displayName:  variant.displayName,
-          productImg,
-          clickUrl, openUrl,
+          productImg, clickUrl, openUrl,
           priceDropBadge: badge,
-          shopName,
-          t
+          shopName, t
         });
 
         const sent = await sendEmail({
@@ -412,16 +432,15 @@ export async function action({ request }) {
 
     // ── CASE 2: OUT OF STOCK ───────────────────────────────────
     else {
-      console.log("🔴 Out of stock");
+      console.log("🔴 Product went out of stock");
 
-      // Reset notified = false so next restock triggers emails again
       const reset = await prisma.backInStock.updateMany({
         where: subscriberWhere,
         data:  { notified: false }
       });
       console.log(`🔄 Reset notified=false for ${reset.count} subscribers`);
 
-      // Admin alert (always in English)
+      // Admin alert
       const adminHtml = `
         <div style="font-family:sans-serif;padding:30px;background:#fffafb;border:1px solid #fee2e2;border-radius:16px;max-width:500px;margin:20px auto;">
           <h2 style="color:#991b1b;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
@@ -446,10 +465,12 @@ export async function action({ request }) {
       console.log(sent ? "✅ Admin alert sent" : "❌ Admin alert failed");
     }
 
+    console.log("✅ Webhook processed successfully");
     return new Response("OK", { status: 200 });
 
   } catch (err) {
-    console.error("❌ Webhook Error:", err.message, err.stack);
+    console.error("❌ Webhook Error:", err.message);
+    console.error(err.stack);
     return new Response("Error", { status: 500 });
   }
 }

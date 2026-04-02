@@ -1,11 +1,10 @@
 {% comment %}
   Notify Me Button — Multilanguage support
   File: notify-me-button.liquid
-  Flow: Button click → Language picker → Email form → Success
+  Flow: Button → Language Picker → Email Form → Success
 {% endcomment %}
 
 <style>
-/* ─── Overlay ─────────────────────────────────────────────── */
 .bis-overlay-{{ block.id }} {
   position: fixed;
   inset: 0;
@@ -15,7 +14,6 @@
   z-index: 9998;
 }
 
-/* ─── Modal ───────────────────────────────────────────────── */
 .bis-modal-{{ block.id }} {
   position: fixed;
   top: 50%;
@@ -34,65 +32,37 @@
   overflow: hidden;
 }
 
-/* ─── Steps ───────────────────────────────────────────────── */
 .bis-step-{{ block.id }} {
   display: none;
   animation: bisSlideIn 0.28s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
 }
-.bis-step-{{ block.id }}.active {
-  display: block;
-}
+.bis-step-{{ block.id }}.active { display: block; }
 
 @keyframes bisSlideIn {
   from { opacity: 0; transform: translateY(12px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
 
-/* ─── Close button ────────────────────────────────────────── */
 .bis-close-{{ block.id }} {
   position: absolute;
-  top: 14px;
-  right: 16px;
+  top: 14px; right: 16px;
   border: none;
   background: rgba(0,0,0,0.07);
-  width: 30px;
-  height: 30px;
+  width: 30px; height: 30px;
   border-radius: 50%;
   font-size: 16px;
   cursor: pointer;
   color: {{ block.settings.popup_text_color }};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
+  display: flex; align-items: center; justify-content: center;
   transition: background 0.2s;
 }
 .bis-close-{{ block.id }}:hover { background: rgba(0,0,0,0.14); }
 
-/* ─── Step header ─────────────────────────────────────────── */
-.bis-step-header-{{ block.id }} {
-  text-align: center;
-  margin-bottom: 22px;
-}
-.bis-step-header-{{ block.id }} .bis-icon {
-  font-size: 36px;
-  display: block;
-  margin-bottom: 10px;
-}
-.bis-step-header-{{ block.id }} h3 {
-  margin: 0 0 6px;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.3px;
-}
-.bis-step-header-{{ block.id }} p {
-  margin: 0;
-  font-size: 13px;
-  opacity: 0.65;
-  line-height: 1.5;
-}
+.bis-step-header-{{ block.id }} { text-align: center; margin-bottom: 22px; }
+.bis-step-header-{{ block.id }} .bis-icon { font-size: 36px; display: block; margin-bottom: 10px; }
+.bis-step-header-{{ block.id }} h3 { margin: 0 0 6px; font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
+.bis-step-header-{{ block.id }} p  { margin: 0; font-size: 13px; opacity: 0.65; line-height: 1.5; }
 
-/* ─── Language grid ───────────────────────────────────────── */
 .bis-lang-grid-{{ block.id }} {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -101,515 +71,255 @@
 }
 
 .bis-lang-btn-{{ block.id }} {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: flex; align-items: center; gap: 10px;
   padding: 12px 14px;
   border: 2px solid transparent;
   border-radius: 12px;
   background: rgba(0,0,0,0.04);
   cursor: pointer;
   transition: all 0.18s;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 14px; font-weight: 600;
   color: {{ block.settings.popup_text_color }};
   text-align: left;
+  font-family: {{ block.settings.popup_font }};
 }
-
 .bis-lang-btn-{{ block.id }}:hover {
   border-color: #667eea;
-  background: rgba(102, 126, 234, 0.08);
+  background: rgba(102,126,234,0.08);
   transform: translateY(-1px);
 }
+.bis-lang-btn-{{ block.id }} .bis-flag      { font-size: 22px; line-height: 1; }
+.bis-lang-btn-{{ block.id }} .bis-lang-name { font-size: 13px; font-weight: 700; }
+.bis-lang-btn-{{ block.id }} .bis-lang-native { font-size: 11px; opacity: 0.55; display: block; margin-top: 1px; }
 
-.bis-lang-btn-{{ block.id }} .bis-flag {
-  font-size: 22px;
-  line-height: 1;
-}
-
-.bis-lang-btn-{{ block.id }} .bis-lang-name {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.bis-lang-btn-{{ block.id }} .bis-lang-native {
-  font-size: 11px;
-  opacity: 0.55;
-  display: block;
-  margin-top: 1px;
-}
-
-/* ─── Back button ─────────────────────────────────────────── */
 .bis-back-{{ block.id }} {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  color: #667eea;
-  padding: 0;
-  margin-bottom: 18px;
-  opacity: 0.85;
-  transition: opacity 0.2s;
+  display: flex; align-items: center; gap: 6px;
+  border: none; background: none; cursor: pointer;
+  font-size: 13px; font-weight: 600;
+  color: #667eea; padding: 0; margin-bottom: 18px;
+  opacity: 0.85; transition: opacity 0.2s;
+  font-family: {{ block.settings.popup_font }};
 }
 .bis-back-{{ block.id }}:hover { opacity: 1; }
 
-/* ─── Selected language badge ─────────────────────────────── */
 .bis-lang-badge-{{ block.id }} {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: inline-flex; align-items: center; gap: 6px;
   background: rgba(102,126,234,0.1);
   border: 1px solid rgba(102,126,234,0.25);
   border-radius: 20px;
   padding: 4px 12px 4px 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #667eea;
-  margin-bottom: 16px;
+  font-size: 12px; font-weight: 700;
+  color: #667eea; margin-bottom: 16px;
 }
 
-/* ─── Email input ─────────────────────────────────────────── */
 .bis-email-{{ block.id }} {
-  width: 100%;
-  padding: 14px 16px;
+  width: 100%; padding: 14px 16px;
   border-radius: 12px;
   border: 2px solid rgba(0,0,0,0.1);
-  font-size: 15px;
-  margin-bottom: 12px;
+  font-size: 15px; margin-bottom: 12px;
   box-sizing: border-box;
   background: rgba(0,0,0,0.03);
   color: {{ block.settings.popup_text_color }};
-  transition: border-color 0.2s;
-  outline: none;
+  transition: border-color 0.2s; outline: none;
   font-family: {{ block.settings.popup_font }};
 }
-.bis-email-{{ block.id }}:focus {
-  border-color: #667eea;
-  background: white;
-}
+.bis-email-{{ block.id }}:focus { border-color: #667eea; background: white; }
 
-/* ─── Submit button ───────────────────────────────────────── */
 .bis-submit-{{ block.id }} {
-  width: 100%;
-  padding: 15px;
-  border-radius: 12px;
-  border: none;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 800;
-  color: #fff;
+  width: 100%; padding: 15px;
+  border-radius: 12px; border: none; cursor: pointer;
+  font-size: 15px; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  transition: all 0.2s;
-  letter-spacing: 0.2px;
+  transition: all 0.2s; letter-spacing: 0.2px;
   font-family: {{ block.settings.popup_font }};
 }
 .bis-submit-{{ block.id }}:hover    { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(102,126,234,0.35); }
 .bis-submit-{{ block.id }}:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
 
-/* ─── Message ─────────────────────────────────────────────── */
 .bis-message-{{ block.id }} {
-  margin-top: 12px;
-  text-align: center;
-  font-size: 13px;
-  min-height: 18px;
+  margin-top: 12px; text-align: center;
+  font-size: 13px; min-height: 18px;
 }
 .bis-message-{{ block.id }}.success { color: #10b981; }
 .bis-message-{{ block.id }}.error   { color: #ef4444; }
 
-/* ─── Success step ────────────────────────────────────────── */
-.bis-success-{{ block.id }} {
-  text-align: center;
-  padding: 12px 0 4px;
-}
+.bis-success-{{ block.id }} { text-align: center; padding: 12px 0 4px; }
 .bis-success-{{ block.id }} .bis-success-icon {
-  font-size: 52px;
-  display: block;
-  margin-bottom: 14px;
+  font-size: 52px; display: block; margin-bottom: 14px;
   animation: bisBounce 0.5s cubic-bezier(0.34,1.5,0.64,1);
 }
 @keyframes bisBounce {
   from { transform: scale(0.3); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }
 }
-.bis-success-{{ block.id }} h3 {
-  font-size: 20px;
-  font-weight: 800;
-  margin: 0 0 8px;
-}
-.bis-success-{{ block.id }} p {
-  font-size: 13px;
-  opacity: 0.6;
-  margin: 0;
-  line-height: 1.5;
-}
+.bis-success-{{ block.id }} h3 { font-size: 20px; font-weight: 800; margin: 0 0 8px; }
+.bis-success-{{ block.id }} p  { font-size: 13px; opacity: 0.6; margin: 0; line-height: 1.5; }
 
-/* ─── Notify button ───────────────────────────────────────── */
 .bis-btn-{{ block.id }} {
-  width: 100%;
-  padding: 16px;
+  width: 100%; padding: 16px;
   background: linear-gradient(135deg, #111 0%, #2d2d2d 100%);
-  color: white;
-  cursor: pointer;
-  border: none;
-  border-radius: 12px;
-  font-size: 16px;
-  font-weight: 700;
-  transition: all 0.25s;
-  display: none;
-  letter-spacing: 0.2px;
+  color: white; cursor: pointer; border: none;
+  border-radius: 12px; font-size: 16px; font-weight: 700;
+  transition: all 0.25s; display: none; letter-spacing: 0.2px;
   font-family: {{ block.settings.popup_font }};
 }
-.bis-btn-{{ block.id }}:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-}
+.bis-btn-{{ block.id }}:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
 
-/* ─── Progress dots ───────────────────────────────────────── */
-.bis-dots-{{ block.id }} {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 20px;
-}
-.bis-dot-{{ block.id }} {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.15);
-  transition: all 0.3s;
-}
-.bis-dot-{{ block.id }}.active {
-  background: #667eea;
-  width: 18px;
-  border-radius: 3px;
-}
+.bis-dots-{{ block.id }} { display: flex; justify-content: center; gap: 6px; margin-top: 20px; }
+.bis-dot-{{ block.id }} { width: 6px; height: 6px; border-radius: 50%; background: rgba(0,0,0,0.15); transition: all 0.3s; }
+.bis-dot-{{ block.id }}.active { background: #667eea; width: 18px; border-radius: 3px; }
 </style>
 
-<!-- Notify Button -->
 <button class="bis-btn-{{ block.id }}">
   {{ block.settings.button_text | default: 'Notify me when available' }}
 </button>
 
-<!-- Overlay -->
 <div class="bis-overlay-{{ block.id }}"></div>
 
-<!-- Modal -->
 <div class="bis-modal-{{ block.id }}">
   <button class="bis-close-{{ block.id }}" aria-label="Close">✕</button>
 
-  <!-- ── STEP 1: Language Picker ── -->
+  <!-- STEP 1: Language Picker -->
   <div class="bis-step-{{ block.id }} active" id="bis-step-lang-{{ block.id }}">
     <div class="bis-step-header-{{ block.id }}">
       <span class="bis-icon">🌍</span>
       <h3>{{ block.settings.lang_step_title | default: 'Choose Language' }}</h3>
       <p>{{ block.settings.lang_step_subtitle | default: 'Select your preferred language for notifications' }}</p>
     </div>
-
     <div class="bis-lang-grid-{{ block.id }}">
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="en">
-        <span class="bis-flag">🇬🇧</span>
-        <span>
-          <span class="bis-lang-name">English</span>
-          <span class="bis-lang-native">English</span>
-        </span>
-      </button>
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="hi">
-        <span class="bis-flag">🇮🇳</span>
-        <span>
-          <span class="bis-lang-name">Hindi</span>
-          <span class="bis-lang-native">हिन्दी</span>
-        </span>
-      </button>
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="fr">
-        <span class="bis-flag">🇫🇷</span>
-        <span>
-          <span class="bis-lang-name">French</span>
-          <span class="bis-lang-native">Français</span>
-        </span>
-      </button>
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="de">
-        <span class="bis-flag">🇩🇪</span>
-        <span>
-          <span class="bis-lang-name">German</span>
-          <span class="bis-lang-native">Deutsch</span>
-        </span>
-      </button>
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="es">
-        <span class="bis-flag">🇪🇸</span>
-        <span>
-          <span class="bis-lang-name">Spanish</span>
-          <span class="bis-lang-native">Español</span>
-        </span>
-      </button>
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="ar">
-        <span class="bis-flag">🇸🇦</span>
-        <span>
-          <span class="bis-lang-name">Arabic</span>
-          <span class="bis-lang-native">العربية</span>
-        </span>
-      </button>
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="zh">
-        <span class="bis-flag">🇨🇳</span>
-        <span>
-          <span class="bis-lang-name">Chinese</span>
-          <span class="bis-lang-native">中文</span>
-        </span>
-      </button>
-      <button class="bis-lang-btn-{{ block.id }}" data-lang="ja">
-        <span class="bis-flag">🇯🇵</span>
-        <span>
-          <span class="bis-lang-name">Japanese</span>
-          <span class="bis-lang-native">日本語</span>
-        </span>
-      </button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="en"  data-flag="🇬🇧" data-name="English"  data-native="English">  <span class="bis-flag">🇬🇧</span><span><span class="bis-lang-name">English</span> <span class="bis-lang-native">English</span></span></button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="hi"  data-flag="🇮🇳" data-name="Hindi"    data-native="हिन्दी">   <span class="bis-flag">🇮🇳</span><span><span class="bis-lang-name">Hindi</span>   <span class="bis-lang-native">हिन्दी</span></span></button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="fr"  data-flag="🇫🇷" data-name="French"   data-native="Français"> <span class="bis-flag">🇫🇷</span><span><span class="bis-lang-name">French</span>  <span class="bis-lang-native">Français</span></span></button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="de"  data-flag="🇩🇪" data-name="German"   data-native="Deutsch">  <span class="bis-flag">🇩🇪</span><span><span class="bis-lang-name">German</span>  <span class="bis-lang-native">Deutsch</span></span></button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="es"  data-flag="🇪🇸" data-name="Spanish"  data-native="Español">  <span class="bis-flag">🇪🇸</span><span><span class="bis-lang-name">Spanish</span> <span class="bis-lang-native">Español</span></span></button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="ar"  data-flag="🇸🇦" data-name="Arabic"   data-native="العربية"> <span class="bis-flag">🇸🇦</span><span><span class="bis-lang-name">Arabic</span>  <span class="bis-lang-native">العربية</span></span></button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="zh"  data-flag="🇨🇳" data-name="Chinese"  data-native="中文">     <span class="bis-flag">🇨🇳</span><span><span class="bis-lang-name">Chinese</span> <span class="bis-lang-native">中文</span></span></button>
+      <button class="bis-lang-btn-{{ block.id }}" data-lang="ja"  data-flag="🇯🇵" data-name="Japanese" data-native="日本語">   <span class="bis-flag">🇯🇵</span><span><span class="bis-lang-name">Japanese</span><span class="bis-lang-native">日本語</span></span></button>
     </div>
-
     <div class="bis-dots-{{ block.id }}">
       <div class="bis-dot-{{ block.id }} active"></div>
       <div class="bis-dot-{{ block.id }}"></div>
     </div>
   </div>
 
-  <!-- ── STEP 2: Email Form ── -->
+  <!-- STEP 2: Email Form -->
   <div class="bis-step-{{ block.id }}" id="bis-step-email-{{ block.id }}">
-    <button class="bis-back-{{ block.id }}" id="bis-back-{{ block.id }}">
-      ← <span id="bis-back-text-{{ block.id }}">Back</span>
-    </button>
-
+    <button class="bis-back-{{ block.id }}" id="bis-back-{{ block.id }}">← <span id="bis-back-text-{{ block.id }}">Back</span></button>
     <div class="bis-step-header-{{ block.id }}">
       <span class="bis-icon">🔔</span>
       <h3 id="bis-email-title-{{ block.id }}">{{ block.settings.headertext | default: 'Get Notified' }}</h3>
-      <p id="bis-email-subtitle-{{ block.id }}">{{ block.settings.subheadertext | default: "Enter your email and we'll notify you when back in stock." }}</p>
+      <p  id="bis-email-subtitle-{{ block.id }}">{{ block.settings.subheadertext | default: "We'll notify you when back in stock." }}</p>
     </div>
-
-    <div id="bis-lang-badge-wrapper-{{ block.id }}"></div>
-
-    <input
-      type="email"
-      class="bis-email-{{ block.id }}"
-      id="bis-email-input-{{ block.id }}"
-      placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}"
-      required
-    >
-
-    <button class="bis-submit-{{ block.id }}" id="bis-submit-{{ block.id }}">
-      {{ block.settings.subscribe_text | default: 'Notify Me' }}
-    </button>
-
+    <div id="bis-lang-badge-wrapper-{{ block.id }}" style="text-align:center;"></div>
+    <input type="email" class="bis-email-{{ block.id }}" id="bis-email-input-{{ block.id }}" placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}" required>
+    <button class="bis-submit-{{ block.id }}" id="bis-submit-{{ block.id }}">{{ block.settings.subscribe_text | default: 'Notify Me' }}</button>
     <p class="bis-message-{{ block.id }}" id="bis-message-{{ block.id }}"></p>
-
     <div class="bis-dots-{{ block.id }}">
       <div class="bis-dot-{{ block.id }}"></div>
       <div class="bis-dot-{{ block.id }} active"></div>
     </div>
   </div>
 
-  <!-- ── STEP 3: Success ── -->
+  <!-- STEP 3: Success -->
   <div class="bis-step-{{ block.id }}" id="bis-step-success-{{ block.id }}">
     <div class="bis-success-{{ block.id }}">
       <span class="bis-success-icon">🎉</span>
       <h3 id="bis-success-title-{{ block.id }}">You're on the list!</h3>
-      <p id="bis-success-msg-{{ block.id }}">We'll send you an email the moment this product is back in stock.</p>
+      <p  id="bis-success-msg-{{ block.id }}">We'll send you an email the moment this is back in stock.</p>
     </div>
   </div>
 </div>
 
 <script>
 (function() {
-  const BLOCK_ID   = {{ block.id | json }};
-  const btn        = document.querySelector('.bis-btn-' + BLOCK_ID);
-  const modal      = document.querySelector('.bis-modal-' + BLOCK_ID);
-  const overlay    = document.querySelector('.bis-overlay-' + BLOCK_ID);
-  const closeBtn   = document.querySelector('.bis-close-' + BLOCK_ID);
-  const backBtn    = document.getElementById('bis-back-' + BLOCK_ID);
-  const submitBtn  = document.getElementById('bis-submit-' + BLOCK_ID);
-  const emailInput = document.getElementById('bis-email-input-' + BLOCK_ID);
-  const messageEl  = document.getElementById('bis-message-' + BLOCK_ID);
-  const langBadgeWrapper = document.getElementById('bis-lang-badge-wrapper-' + BLOCK_ID);
+  var BLOCK_ID   = {{ block.id | json }};
+  var btn        = document.querySelector('.bis-btn-'    + BLOCK_ID);
+  var modal      = document.querySelector('.bis-modal-'  + BLOCK_ID);
+  var overlay    = document.querySelector('.bis-overlay-'+ BLOCK_ID);
+  var closeBtn   = document.querySelector('.bis-close-'  + BLOCK_ID);
+  var backBtn    = document.getElementById('bis-back-'         + BLOCK_ID);
+  var submitBtn  = document.getElementById('bis-submit-'       + BLOCK_ID);
+  var emailInput = document.getElementById('bis-email-input-'  + BLOCK_ID);
+  var messageEl  = document.getElementById('bis-message-'      + BLOCK_ID);
+  var badgeEl    = document.getElementById('bis-lang-badge-wrapper-' + BLOCK_ID);
 
-  const stepLang    = document.getElementById('bis-step-lang-'    + BLOCK_ID);
-  const stepEmail   = document.getElementById('bis-step-email-'   + BLOCK_ID);
-  const stepSuccess = document.getElementById('bis-step-success-' + BLOCK_ID);
+  var stepLang    = document.getElementById('bis-step-lang-'    + BLOCK_ID);
+  var stepEmail   = document.getElementById('bis-step-email-'   + BLOCK_ID);
+  var stepSuccess = document.getElementById('bis-step-success-' + BLOCK_ID);
 
-  const allVariants = {{ product.variants | json }};
+  var allVariants = {{ product.variants | json }};
+
+  // ✅ selectedLang is the SINGLE source of truth — set ONLY when user clicks a language button
+  var selectedLang = 'en';
 
   // ─── Translations ─────────────────────────────────────────────
-  const TRANSLATIONS = {
-    en: {
-      flag: '🇬🇧', name: 'English',
-      title:       'Get Notified',
-      subtitle:    "We'll email you the moment it's back.",
-      placeholder: 'Enter your email',
-      submit:      'Notify Me',
-      back:        'Back',
-      successTitle:'You\'re on the list! 🎉',
-      successMsg:  'We\'ll send you an email the moment this is back in stock.',
-      alreadyOn:   'You\'re already on the waitlist! 🔔',
-      inStock:     'This product is currently in stock!',
-      network:     'Network error. Please try again.',
-      server:      'Server error. Please try again.',
-      invalid:     'Please enter a valid email.',
-      empty:       'Please enter your email.'
-    },
-    hi: {
-      flag: '🇮🇳', name: 'हिन्दी',
-      title:       'सूचना पाएं',
-      subtitle:    'जैसे ही यह वापस स्टॉक में आए, हम आपको ईमेल करेंगे।',
-      placeholder: 'अपना ईमेल दर्ज करें',
-      submit:      'सूचित करें',
-      back:        'वापस',
-      successTitle:'आप सूची में हैं! 🎉',
-      successMsg:  'जैसे ही यह वापस आएगा, हम आपको ईमेल करेंगे।',
-      alreadyOn:   'आप पहले से वेटलिस्ट पर हैं! 🔔',
-      inStock:     'यह उत्पाद वर्तमान में स्टॉक में है!',
-      network:     'नेटवर्क त्रुटि। कृपया पुनः प्रयास करें।',
-      server:      'सर्वर त्रुटि। कृपया पुनः प्रयास करें।',
-      invalid:     'कृपया एक वैध ईमेल दर्ज करें।',
-      empty:       'कृपया अपना ईमेल दर्ज करें।'
-    },
-    fr: {
-      flag: '🇫🇷', name: 'Français',
-      title:       'Soyez Notifié',
-      subtitle:    'Nous vous enverrons un e-mail dès que ce produit sera disponible.',
-      placeholder: 'Entrez votre e-mail',
-      submit:      'Me Notifier',
-      back:        'Retour',
-      successTitle:'Vous êtes sur la liste ! 🎉',
-      successMsg:  'Nous vous enverrons un e-mail dès qu\'il sera de retour en stock.',
-      alreadyOn:   'Vous êtes déjà sur la liste d\'attente ! 🔔',
-      inStock:     'Ce produit est actuellement en stock !',
-      network:     'Erreur réseau. Veuillez réessayer.',
-      server:      'Erreur serveur. Veuillez réessayer.',
-      invalid:     'Veuillez entrer un e-mail valide.',
-      empty:       'Veuillez entrer votre e-mail.'
-    },
-    de: {
-      flag: '🇩🇪', name: 'Deutsch',
-      title:       'Benachrichtigt werden',
-      subtitle:    'Wir senden Ihnen eine E-Mail, sobald es wieder verfügbar ist.',
-      placeholder: 'E-Mail eingeben',
-      submit:      'Benachrichtigen',
-      back:        'Zurück',
-      successTitle:'Sie stehen auf der Liste! 🎉',
-      successMsg:  'Wir senden Ihnen eine E-Mail, sobald es wieder vorrätig ist.',
-      alreadyOn:   'Sie stehen bereits auf der Warteliste! 🔔',
-      inStock:     'Dieses Produkt ist derzeit auf Lager!',
-      network:     'Netzwerkfehler. Bitte versuchen Sie es erneut.',
-      server:      'Serverfehler. Bitte versuchen Sie es erneut.',
-      invalid:     'Bitte geben Sie eine gültige E-Mail ein.',
-      empty:       'Bitte geben Sie Ihre E-Mail ein.'
-    },
-    es: {
-      flag: '🇪🇸', name: 'Español',
-      title:       'Recibir Notificación',
-      subtitle:    'Te enviaremos un correo en cuanto vuelva a estar disponible.',
-      placeholder: 'Ingresa tu correo',
-      submit:      'Notificarme',
-      back:        'Volver',
-      successTitle:'¡Estás en la lista! 🎉',
-      successMsg:  'Te enviaremos un correo cuando vuelva a estar en stock.',
-      alreadyOn:   '¡Ya estás en la lista de espera! 🔔',
-      inStock:     '¡Este producto está actualmente en stock!',
-      network:     'Error de red. Por favor intenta de nuevo.',
-      server:      'Error del servidor. Por favor intenta de nuevo.',
-      invalid:     'Por favor ingresa un correo válido.',
-      empty:       'Por favor ingresa tu correo.'
-    },
-    ar: {
-      flag: '🇸🇦', name: 'العربية',
-      title:       'احصل على إشعار',
-      subtitle:    'سنرسل لك بريدًا إلكترونيًا فور توفره.',
-      placeholder: 'أدخل بريدك الإلكتروني',
-      submit:      'أخطرني',
-      back:        'رجوع',
-      successTitle:'أنت في القائمة! 🎉',
-      successMsg:  'سنرسل لك بريدًا إلكترونيًا عندما يعود إلى المخزون.',
-      alreadyOn:   'أنت بالفعل في قائمة الانتظار! 🔔',
-      inStock:     'هذا المنتج متوفر حاليًا في المخزون!',
-      network:     'خطأ في الشبكة. الرجاء المحاولة مرة أخرى.',
-      server:      'خطأ في الخادم. الرجاء المحاولة مرة أخرى.',
-      invalid:     'الرجاء إدخال بريد إلكتروني صحيح.',
-      empty:       'الرجاء إدخال بريدك الإلكتروني.'
-    },
-    zh: {
-      flag: '🇨🇳', name: '中文',
-      title:       '获取通知',
-      subtitle:    '一旦商品补货，我们将立即发送邮件通知您。',
-      placeholder: '输入您的邮箱',
-      submit:      '通知我',
-      back:        '返回',
-      successTitle:'您已加入列表！🎉',
-      successMsg:  '商品一旦恢复库存，我们将立即发送邮件通知您。',
-      alreadyOn:   '您已在等待列表中！🔔',
-      inStock:     '该商品目前有货！',
-      network:     '网络错误，请重试。',
-      server:      '服务器错误，请重试。',
-      invalid:     '请输入有效的邮箱地址。',
-      empty:       '请输入您的邮箱。'
-    },
-    ja: {
-      flag: '🇯🇵', name: '日本語',
-      title:       '通知を受け取る',
-      subtitle:    '在庫が戻り次第、メールでお知らせします。',
-      placeholder: 'メールアドレスを入力',
-      submit:      '通知する',
-      back:        '戻る',
-      successTitle:'リストに追加されました！🎉',
-      successMsg:  '在庫が戻り次第、メールでお知らせします。',
-      alreadyOn:   'すでにウェイティングリストに登録されています！🔔',
-      inStock:     'この商品は現在在庫があります！',
-      network:     'ネットワークエラーです。再試行してください。',
-      server:      'サーバーエラーです。再試行してください。',
-      invalid:     '有効なメールアドレスを入力してください。',
-      empty:       'メールアドレスを入力してください。'
-    }
+  var T = {
+    en: { flag:'🇬🇧', name:'English',  title:'Get Notified',        subtitle:"We'll email you the moment it's back.",                       placeholder:'Enter your email',         submit:'Notify Me',        back:'Back',    successTitle:"You're on the list! 🎉",           successMsg:"We'll notify you when it's back in stock.", alreadyOn:"You're already on the waitlist! 🔔", inStock:'This product is currently in stock!', network:'Network error. Please try again.', server:'Server error. Please try again.', invalid:'Please enter a valid email.', empty:'Please enter your email.' },
+    hi: { flag:'🇮🇳', name:'हिन्दी',   title:'सूचना पाएं',           subtitle:'जैसे ही वापस आए, हम आपको ईमेल करेंगे।',                     placeholder:'अपना ईमेल दर्ज करें',      submit:'सूचित करें',       back:'वापस',    successTitle:'आप सूची में हैं! 🎉',              successMsg:'जैसे ही वापस आएगा, हम ईमेल करेंगे।',       alreadyOn:'आप पहले से वेटलिस्ट पर हैं! 🔔',    inStock:'यह उत्पाद स्टॉक में है!',            network:'नेटवर्क त्रुटि। पुनः प्रयास करें।', server:'सर्वर त्रुटि। पुनः प्रयास करें।',  invalid:'वैध ईमेल दर्ज करें।',        empty:'ईमेल दर्ज करें।' },
+    fr: { flag:'🇫🇷', name:'Français', title:'Soyez Notifié',        subtitle:"Nous vous enverrons un e-mail dès qu'il est disponible.",    placeholder:'Entrez votre e-mail',       submit:'Me Notifier',      back:'Retour',  successTitle:'Vous êtes sur la liste ! 🎉',       successMsg:"Nous vous enverrons un e-mail dès qu'il revient.", alreadyOn:"Vous êtes déjà sur la liste ! 🔔",   inStock:'Ce produit est en stock !',           network:'Erreur réseau. Réessayez.',         server:'Erreur serveur. Réessayez.',       invalid:'E-mail invalide.',            empty:'Entrez votre e-mail.' },
+    de: { flag:'🇩🇪', name:'Deutsch',  title:'Benachrichtigt werden',subtitle:'Wir senden Ihnen eine E-Mail, sobald es verfügbar ist.',    placeholder:'E-Mail eingeben',           submit:'Benachrichtigen',  back:'Zurück',  successTitle:'Sie stehen auf der Liste! 🎉',      successMsg:'Wir benachrichtigen Sie, wenn es wieder vorrätig ist.', alreadyOn:'Sie sind bereits auf der Warteliste! 🔔', inStock:'Dieses Produkt ist auf Lager!',    network:'Netzwerkfehler. Erneut versuchen.',server:'Serverfehler. Erneut versuchen.', invalid:'Gültige E-Mail eingeben.',    empty:'E-Mail eingeben.' },
+    es: { flag:'🇪🇸', name:'Español',  title:'Recibir Notificación', subtitle:'Te avisaremos cuando vuelva a estar disponible.',           placeholder:'Ingresa tu correo',         submit:'Notificarme',      back:'Volver',  successTitle:'¡Estás en la lista! 🎉',            successMsg:'Te enviaremos un correo cuando vuelva.', alreadyOn:'¡Ya estás en la lista de espera! 🔔',inStock:'¡Este producto está en stock!',       network:'Error de red. Intenta de nuevo.',   server:'Error del servidor. Intenta de nuevo.',invalid:'Correo inválido.',           empty:'Ingresa tu correo.' },
+    ar: { flag:'🇸🇦', name:'العربية', title:'احصل على إشعار',        subtitle:'سنرسل لك بريدًا فور توفره.',                               placeholder:'أدخل بريدك الإلكتروني',    submit:'أخطرني',           back:'رجوع',    successTitle:'أنت في القائمة! 🎉',               successMsg:'سنرسل لك بريدًا عند عودته للمخزون.', alreadyOn:'أنت بالفعل في القائمة! 🔔',          inStock:'هذا المنتج متوفر حاليًا!',           network:'خطأ في الشبكة. حاول مجددًا.',      server:'خطأ في الخادم. حاول مجددًا.',     invalid:'بريد إلكتروني غير صالح.',     empty:'أدخل بريدك.' },
+    zh: { flag:'🇨🇳', name:'中文',     title:'获取通知',              subtitle:'一旦商品补货，我们将立即通知您。',                         placeholder:'输入您的邮箱',              submit:'通知我',           back:'返回',    successTitle:'您已加入列表！🎉',                 successMsg:'商品补货后我们将立即通知您。',         alreadyOn:'您已在等待列表中！🔔',               inStock:'该商品目前有货！',                    network:'网络错误，请重试。',                server:'服务器错误，请重试。',             invalid:'请输入有效邮箱。',             empty:'请输入邮箱。' },
+    ja: { flag:'🇯🇵', name:'日本語',   title:'通知を受け取る',        subtitle:'在庫が戻り次第、メールでお知らせします。',                 placeholder:'メールアドレスを入力',       submit:'通知する',         back:'戻る',    successTitle:'リストに追加されました！🎉',       successMsg:'在庫が戻り次第お知らせします。',      alreadyOn:'すでに登録済みです！🔔',             inStock:'この商品は現在在庫があります！',      network:'ネットワークエラーです。',          server:'サーバーエラーです。',            invalid:'有効なメールを入力してください。',empty:'メールを入力してください。' }
   };
-
-  let selectedLang = 'en';
-
-  // ─── Variant helpers ──────────────────────────────────────────
-  function getSelectedVariantId() {
-    const params    = new URLSearchParams(window.location.search);
-    const idFromUrl = params.get('variant');
-    if (idFromUrl) return parseInt(idFromUrl);
-    const selectEl = document.querySelector('select[name="id"], input[name="id"]:checked');
-    if (selectEl && selectEl.value) return parseInt(selectEl.value);
-    return allVariants[0]?.id ?? null;
-  }
-
-  function getSelectedVariant() {
-    const id = getSelectedVariantId();
-    return id ? (allVariants.find(v => v.id === id) || null) : null;
-  }
-
-  function isTrulyOutOfStock(variant) {
-    if (!variant) return false;
-    if (!variant.inventory_management || variant.inventory_management === 'none') return false;
-    if (variant.inventory_policy === 'continue') return false;
-    const qty = variant.inventory_quantity;
-    if (typeof qty === 'number' && qty <= 0) return true;
-    return !variant.available;
-  }
-
-  function updateButtonVisibility() {
-    const outOfStock = isTrulyOutOfStock(getSelectedVariant());
-    btn.style.display = outOfStock ? 'block' : 'none';
-    if (!outOfStock && modal.style.display === 'block') closeModal();
-  }
 
   // ─── Step management ──────────────────────────────────────────
   function showStep(step) {
-    [stepLang, stepEmail, stepSuccess].forEach(s => {
-      s.classList.remove('active');
-    });
+    [stepLang, stepEmail, stepSuccess].forEach(function(s) { s.classList.remove('active'); });
     step.classList.add('active');
   }
 
-  // ─── Modal open / close ───────────────────────────────────────
+  // ─── Apply translations to email step ─────────────────────────
+  function applyLang(lang) {
+    var t = T[lang] || T['en'];
+    document.getElementById('bis-email-title-'    + BLOCK_ID).textContent = t.title;
+    document.getElementById('bis-email-subtitle-' + BLOCK_ID).textContent = t.subtitle;
+    document.getElementById('bis-back-text-'      + BLOCK_ID).textContent = t.back;
+    document.getElementById('bis-success-title-'  + BLOCK_ID).textContent = t.successTitle;
+    document.getElementById('bis-success-msg-'    + BLOCK_ID).textContent = t.successMsg;
+    emailInput.placeholder  = t.placeholder;
+    submitBtn.textContent   = t.submit;
+    messageEl.textContent   = '';
+    stepEmail.style.direction = (lang === 'ar') ? 'rtl' : 'ltr';
+    badgeEl.innerHTML = '<div class="bis-lang-badge-' + BLOCK_ID + '">' + t.flag + ' ' + t.name + '</div>';
+  }
+
+  // ─── Variant helpers ──────────────────────────────────────────
+  function getSelectedVariantId() {
+    var params = new URLSearchParams(window.location.search);
+    var fromUrl = params.get('variant');
+    if (fromUrl) return parseInt(fromUrl);
+    var sel = document.querySelector('select[name="id"], input[name="id"]:checked');
+    if (sel && sel.value) return parseInt(sel.value);
+    return allVariants[0] ? allVariants[0].id : null;
+  }
+
+  function getSelectedVariant() {
+    var id = getSelectedVariantId();
+    if (!id) return null;
+    for (var i = 0; i < allVariants.length; i++) {
+      if (allVariants[i].id === id) return allVariants[i];
+    }
+    return null;
+  }
+
+  function isTrulyOutOfStock(v) {
+    if (!v) return false;
+    if (!v.inventory_management || v.inventory_management === 'none') return false;
+    if (v.inventory_policy === 'continue') return false;
+    var qty = v.inventory_quantity;
+    if (typeof qty === 'number' && qty <= 0) return true;
+    return !v.available;
+  }
+
+  function updateButtonVisibility() {
+    var oos = isTrulyOutOfStock(getSelectedVariant());
+    btn.style.display = oos ? 'block' : 'none';
+    if (!oos && modal.style.display === 'block') closeModal();
+  }
+
+  // ─── Modal open/close ─────────────────────────────────────────
   function openModal() {
     if (!isTrulyOutOfStock(getSelectedVariant())) return;
     modal.style.display   = 'block';
@@ -617,7 +327,8 @@
     emailInput.value      = '';
     messageEl.textContent = '';
     messageEl.className   = 'bis-message-' + BLOCK_ID;
-    showStep(stepLang); // Always start at language picker
+    selectedLang          = 'en'; // reset to default each open
+    showStep(stepLang);
   }
 
   function closeModal() {
@@ -625,133 +336,113 @@
     overlay.style.display = 'none';
   }
 
-  // ─── Apply language to email step ─────────────────────────────
-  function applyLanguage(lang) {
-    selectedLang = lang;
-    const t = TRANSLATIONS[lang] || TRANSLATIONS['en'];
-
-    document.getElementById('bis-email-title-'    + BLOCK_ID).textContent    = t.title;
-    document.getElementById('bis-email-subtitle-' + BLOCK_ID).textContent    = t.subtitle;
-    document.getElementById('bis-back-text-'      + BLOCK_ID).textContent    = t.back;
-    emailInput.placeholder                                                      = t.placeholder;
-    submitBtn.textContent                                                        = t.submit;
-    messageEl.textContent                                                        = '';
-
-    // RTL support for Arabic
-    stepEmail.style.direction = lang === 'ar' ? 'rtl' : 'ltr';
-
-    // Language badge
-    langBadgeWrapper.innerHTML = `
-      <div class="bis-lang-badge-${BLOCK_ID}">
-        <span>${t.flag}</span>
-        <span>${t.name}</span>
-      </div>`;
-
-    // Success step texts
-    document.getElementById('bis-success-title-' + BLOCK_ID).textContent = t.successTitle;
-    document.getElementById('bis-success-msg-'   + BLOCK_ID).textContent = t.successMsg;
+  function showMsg(text, isError) {
+    messageEl.textContent = text;
+    messageEl.className   = 'bis-message-' + BLOCK_ID + (isError ? ' error' : ' success');
   }
 
   // ─── Language button clicks ───────────────────────────────────
-  document.querySelectorAll('.bis-lang-btn-' + BLOCK_ID).forEach(function(langBtn) {
-    langBtn.addEventListener('click', function() {
-      const lang = langBtn.getAttribute('data-lang');
-      applyLanguage(lang);
+  document.querySelectorAll('.bis-lang-btn-' + BLOCK_ID).forEach(function(lb) {
+    lb.addEventListener('click', function() {
+      // ✅ Set selectedLang HERE — this is the only place it gets set
+      selectedLang = lb.getAttribute('data-lang');
+      console.log('[BIS] Language selected:', selectedLang);
+      applyLang(selectedLang);
       showStep(stepEmail);
-      emailInput.focus();
+      setTimeout(function() { emailInput.focus(); }, 50);
     });
   });
 
-  // ─── Back button ──────────────────────────────────────────────
-  backBtn.addEventListener('click', function() {
-    showStep(stepLang);
-  });
+  backBtn.addEventListener('click', function() { showStep(stepLang); });
 
   // ─── Submit ───────────────────────────────────────────────────
   submitBtn.addEventListener('click', async function() {
-    const t     = TRANSLATIONS[selectedLang] || TRANSLATIONS['en'];
-    const email = emailInput.value.trim();
+    // ✅ Read selectedLang at submit time — guaranteed to be set by language click
+    var lang  = selectedLang;
+    var t     = T[lang] || T['en'];
+    var email = emailInput.value.trim();
 
-    if (!email)                                        { showMsg(t.empty,   true); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))   { showMsg(t.invalid, true); return; }
+    console.log('[BIS] Submit — language at submit time:', lang);
 
-    const variant = getSelectedVariant();
-    if (!variant)                                       { showMsg('Variant not found', true); return; }
-    if (!isTrulyOutOfStock(variant))                    { showMsg(t.inStock, true); setTimeout(closeModal, 2000); return; }
+    if (!email)                                      { showMsg(t.empty,   true); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showMsg(t.invalid, true); return; }
+
+    var variant = getSelectedVariant();
+    if (!variant)                  { showMsg('Variant not found', true); return; }
+    if (!isTrulyOutOfStock(variant)) { showMsg(t.inStock, true); setTimeout(closeModal, 2000); return; }
 
     submitBtn.disabled    = true;
     submitBtn.textContent = '...';
 
     try {
-      const requestData = {
-        email,
+      var requestData = {
+        email:        email,
         variantId:    variant.id.toString(),
         productId:    String({{ product.id | json }}),
         productName:  {{ product.title | json }},
         variantTitle: variant.title || 'Default',
         shop:         {{ shop.permanent_domain | json }},
         currentPrice: variant.price ? (variant.price / 100).toFixed(2) : '0.00',
-        language:     selectedLang  // ← sent to server for language-aware emails
+        language:     lang   // ✅ explicitly pass the selected language
       };
 
-      const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
+      // ✅ Final log — confirm language is correct before sending
+      console.log('[BIS] REQUEST PAYLOAD:', JSON.stringify(requestData));
+
+      var response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(requestData)
       });
 
-      const ct = response.headers.get('content-type');
+      var ct = response.headers.get('content-type');
       if (!ct || !ct.includes('application/json')) {
+        var txt = await response.text();
+        console.error('[BIS] Non-JSON:', txt);
         showMsg(t.server, true);
         return;
       }
 
-      const data = await response.json();
+      var data = await response.json();
+      console.log('[BIS] RESPONSE:', data);
 
       if (data.success) {
         showStep(stepSuccess);
         setTimeout(closeModal, 3000);
       } else {
-        showMsg(data.message || data.error || t.server, !data.success);
+        showMsg(data.message || data.error || t.server, true);
       }
     } catch (err) {
-      console.error('[BIS]', err);
+      console.error('[BIS] Error:', err);
       showMsg(t.network, true);
     } finally {
       submitBtn.disabled    = false;
-      submitBtn.textContent = (TRANSLATIONS[selectedLang] || TRANSLATIONS['en']).submit;
+      submitBtn.textContent = (T[lang] || T['en']).submit;
     }
   });
-
-  function showMsg(text, isError) {
-    messageEl.textContent = text;
-    messageEl.className   = 'bis-message-' + BLOCK_ID + (isError ? ' error' : ' success');
-  }
 
   emailInput.addEventListener('keypress', function(e) {
     if (e.key === 'Enter') { e.preventDefault(); submitBtn.click(); }
   });
 
-  // ─── Open / close handlers ────────────────────────────────────
-  btn.addEventListener('click',     openModal);
+  btn.addEventListener('click',      openModal);
   closeBtn.addEventListener('click', closeModal);
   overlay.addEventListener('click',  closeModal);
 
-  // ─── Visibility listeners ─────────────────────────────────────
-  document.addEventListener('DOMContentLoaded',      updateButtonVisibility);
+  document.addEventListener('DOMContentLoaded',     updateButtonVisibility);
   document.addEventListener('change', function(e) {
     if (e.target.matches('select[name="id"]') || e.target.matches('input[name="id"]'))
       updateButtonVisibility();
   });
-  document.addEventListener('variant:change',        updateButtonVisibility);
-  document.addEventListener('variantChange',          updateButtonVisibility);
-  document.addEventListener('shopify:section:load',  updateButtonVisibility);
-  window.addEventListener('popstate',                updateButtonVisibility);
+  document.addEventListener('variant:change',       updateButtonVisibility);
+  document.addEventListener('variantChange',         updateButtonVisibility);
+  document.addEventListener('shopify:section:load', updateButtonVisibility);
+  window.addEventListener('popstate',               updateButtonVisibility);
 
-  let lastVariantId = null;
+  var lastVariantId = null;
   setInterval(function() {
     if (modal.style.display === 'block') return;
-    const id = getSelectedVariantId();
+    var id = getSelectedVariantId();
     if (id !== lastVariantId) { lastVariantId = id; updateButtonVisibility(); }
   }, 400);
 
@@ -763,15 +454,15 @@
   "name": "Notify Me Button",
   "target": "section",
   "settings": [
-    { "type": "text",  "id": "button_text",        "label": "Button Text",               "default": "Notify me when available" },
-    { "type": "text",  "id": "lang_step_title",     "label": "Language Step Title",       "default": "Choose Language" },
-    { "type": "text",  "id": "lang_step_subtitle",  "label": "Language Step Subtitle",    "default": "Select your preferred language for notifications" },
-    { "type": "text",  "id": "headertext",          "label": "Email Step Header",         "default": "Get Notified" },
-    { "type": "text",  "id": "subheadertext",       "label": "Email Step Subheader",      "default": "Enter your email and we'll notify you when back in stock." },
-    { "type": "text",  "id": "email_placeholder",   "label": "Email Placeholder",         "default": "Enter your email" },
-    { "type": "text",  "id": "subscribe_text",      "label": "Subscribe Button Text",     "default": "Notify Me" },
-    { "type": "color", "id": "popup_bg_color",      "label": "Popup Background Color",    "default": "#ffffff" },
-    { "type": "color", "id": "popup_text_color",    "label": "Popup Text Color",          "default": "#000000" },
+    { "type": "text",  "id": "button_text",       "label": "Button Text",               "default": "Notify me when available" },
+    { "type": "text",  "id": "lang_step_title",    "label": "Language Step Title",       "default": "Choose Language" },
+    { "type": "text",  "id": "lang_step_subtitle", "label": "Language Step Subtitle",    "default": "Select your preferred language for notifications" },
+    { "type": "text",  "id": "headertext",         "label": "Email Step Header",         "default": "Get Notified" },
+    { "type": "text",  "id": "subheadertext",      "label": "Email Step Subheader",      "default": "Enter your email and we'll notify you when back in stock." },
+    { "type": "text",  "id": "email_placeholder",  "label": "Email Placeholder",         "default": "Enter your email" },
+    { "type": "text",  "id": "subscribe_text",     "label": "Subscribe Button Text",     "default": "Notify Me" },
+    { "type": "color", "id": "popup_bg_color",     "label": "Popup Background Color",    "default": "#ffffff" },
+    { "type": "color", "id": "popup_text_color",   "label": "Popup Text Color",          "default": "#000000" },
     {
       "type": "select",
       "id": "popup_font",
