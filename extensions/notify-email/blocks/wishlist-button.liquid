@@ -191,22 +191,26 @@
   const PRODUCT_ID = String({{ product.id }});
   const STORAGE_KEY = 'wl_' + {{ shop.permanent_domain | json }} + '_' + PRODUCT_ID;
 
-  const btn      = document.querySelector('.wl-btn-'        + BLOCK_ID);
-  const btnText  = document.querySelector('.wl-btn-text-'   + BLOCK_ID);
-  const overlay  = document.querySelector('.wl-overlay-'    + BLOCK_ID);
-  const modal    = document.querySelector('.wl-modal-'      + BLOCK_ID);
-  const closeBtn = document.querySelector('.wl-modal-close-'+ BLOCK_ID);
-  const input    = document.querySelector('.wl-input-'      + BLOCK_ID);
-  const saveBtn  = document.querySelector('.wl-save-btn-'   + BLOCK_ID);
-  const msgEl    = document.querySelector('.wl-msg-'        + BLOCK_ID);
+  const root = document;
 
-  const TEXT_ADD    = {{ block.settings.button_text | default: 'Add to Wishlist' | json }};
-  const TEXT_SAVED  = {{ block.settings.button_saved_text | default: 'Wishlisted ✓' | json }};
-  const TEXT_SAVE_BTN = {{ block.settings.save_button_text | default: 'Save to Wishlist' | json }};
+  const btn      = root.querySelector('.wl-btn-' + BLOCK_ID);
+  if (!btn) return;
 
-  // ── State ─────────────────────────────────────────────
+  const btnText  = root.querySelector('.wl-btn-text-' + BLOCK_ID);
+  const overlay  = root.querySelector('.wl-overlay-' + BLOCK_ID);
+  const modal    = root.querySelector('.wl-modal-' + BLOCK_ID);
+  const closeBtn = root.querySelector('.wl-modal-close-' + BLOCK_ID);
+  const input    = root.querySelector('.wl-input-' + BLOCK_ID);
+  const saveBtn  = root.querySelector('.wl-save-btn-' + BLOCK_ID);
+  const msgEl    = root.querySelector('.wl-msg-' + BLOCK_ID);
 
-  // localStorage se saved email + wishlist status load karo
+  const TEXT_ADD    = {{ block.settings.button_text | json }};
+  const TEXT_SAVED  = {{ block.settings.button_saved_text | json }};
+  const TEXT_SAVE_BTN = {{ block.settings.save_button_text | json }};
+
+  // =========================
+  // STORAGE
+  // =========================
   function getSavedData() {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
@@ -214,9 +218,7 @@
   }
 
   function saveData(data) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {}
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }
 
   function isWishlisted() {
@@ -227,147 +229,135 @@
     return getSavedData().email || '';
   }
 
-  // ── UI Update ─────────────────────────────────────────
-
+  // =========================
+  // UI
+  // =========================
   function setWishlistedUI(state) {
-    if (state) {
-      btn.classList.add('wishlisted');
-      btnText.textContent = TEXT_SAVED;
-    } else {
-      btn.classList.remove('wishlisted');
-      btnText.textContent = TEXT_ADD;
-    }
+    btn.classList.toggle('wishlisted', state);
+    btnText.textContent = state ? TEXT_SAVED : TEXT_ADD;
   }
 
   function showMsg(text, isError = false) {
     msgEl.textContent = text;
-    msgEl.className   = 'wl-msg-' + BLOCK_ID + (isError ? ' error' : ' success');
+    msgEl.className = 'wl-msg-' + BLOCK_ID + (isError ? ' error' : ' success');
   }
 
   function openModal() {
-    input.value = getSavedEmail(); // Pehla email pre-fill karo
+    input.value = getSavedEmail();
     msgEl.textContent = '';
-    msgEl.className   = 'wl-msg-' + BLOCK_ID;
-    modal.style.display   = 'block';
+    modal.style.display = 'block';
     overlay.style.display = 'block';
-    setTimeout(() => input.focus(), 100);
   }
 
   function closeModal() {
-    modal.style.display   = 'none';
+    modal.style.display = 'none';
     overlay.style.display = 'none';
   }
 
-  // ── API Call ──────────────────────────────────────────
-
+  // =========================
+  // API
+  // =========================
   async function callWishlistAPI(email, action) {
-    const allVariants = {{ product.variants | json }};
-    const urlParam    = new URLSearchParams(window.location.search).get('variant');
-    const variantId   = urlParam
-      ? parseInt(urlParam)
-      : (allVariants.find(v => v.available) || allVariants[0])?.id;
-    const variant     = allVariants.find(v => v.id === variantId) || allVariants[0];
+    const variants = {{ product.variants | json }};
+    const selectedVariant =
+      variants.find(v => v.id == new URLSearchParams(location.search).get('variant')) ||
+      variants.find(v => v.available) ||
+      variants[0];
 
     const payload = {
       email,
       action,
-      shop:         {{ shop.permanent_domain | json }},
-      productId:    PRODUCT_ID,
-      variantId:    String(variant?.id || ''),
+      shop: {{ shop.permanent_domain | json }},
+      productId: PRODUCT_ID,
+      variantId: String(selectedVariant?.id || ''),
       productTitle: {{ product.title | json }},
-      variantTitle: variant?.title || 'Default',
+      variantTitle: selectedVariant?.title || 'Default',
       productImage: {{ product.featured_image | img_url: '400x' | json }},
       productHandle: {{ product.handle | json }},
-      price:        variant ? (variant.price / 100).toFixed(2) : '0.00',
+      price: selectedVariant ? (selectedVariant.price / 100).toFixed(2) : '0.00',
     };
 
-    const res  = await fetch('/apps/notify-out-stock/proxy/wishlist-add', {
-      method:  'POST',
+    const res = await fetch('/apps/notify-out-stock/proxy/wishlist-add', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
+      body: JSON.stringify(payload),
     });
 
-    if (!res.headers.get('content-type')?.includes('application/json')) {
-      throw new Error('Server error');
-    }
-    return res.json();
+    if (!res.ok) throw new Error('Request failed');
+
+    const data = await res.json();
+    return data;
   }
 
-  // ── Button Click ──────────────────────────────────────
+  // =========================
+  // BUTTON CLICK
+  // =========================
+  btn.addEventListener('click', async () => {
+    if (btn.disabled) return;
 
-  btn.onclick = async function () {
-    // ✅ Agar already wishlisted hai → UNWISHLIST (email chahiye, localStorage se lo)
     if (isWishlisted()) {
       const email = getSavedEmail();
-      if (!email) {
-        // email nahi pata → modal kholo phir se
-        openModal();
-        return;
-      }
+      if (!email) return openModal();
 
       btn.disabled = true;
+
       try {
         const data = await callWishlistAPI(email, 'remove');
         if (data.success) {
-          saveData({ email, wishlisted: false }); // email yaad rakho, status false
+          saveData({ email, wishlisted: false });
           setWishlistedUI(false);
         }
       } catch (e) {
-        console.error('Unwishlist error:', e);
-      } finally {
-        btn.disabled = false;
+        console.error(e);
       }
+
+      btn.disabled = false;
       return;
     }
 
-    // ✅ Wishlisted nahi → modal kholo
     openModal();
-  };
+  });
 
   closeBtn.onclick = closeModal;
-  overlay.onclick  = closeModal;
+  overlay.onclick = closeModal;
 
-  // ── Save Button ───────────────────────────────────────
-
-  saveBtn.onclick = async function () {
+  // =========================
+  // SAVE
+  // =========================
+  saveBtn.addEventListener('click', async () => {
     const email = input.value.trim();
 
-    if (!email) { showMsg('Please enter your email', true); return; }
+    if (!email) return showMsg('Enter email', true);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      showMsg('Please enter a valid email', true);
-      return;
+      return showMsg('Invalid email', true);
     }
 
-    saveBtn.disabled    = true;
+    saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
 
     try {
       const data = await callWishlistAPI(email, 'add');
 
       if (data.success) {
-        // ✅ localStorage mein save karo
         saveData({ email, wishlisted: true });
         setWishlistedUI(true);
-        showMsg('❤️ Saved to your wishlist!', false);
-        setTimeout(closeModal, 1500);
+        showMsg('Saved ❤️');
+        setTimeout(closeModal, 1200);
       } else {
-        showMsg(data.error || 'Something went wrong', true);
+        showMsg(data.error || 'Error', true);
       }
-    } catch (err) {
-      console.error('Wishlist error:', err);
-      showMsg('Network error. Please try again.', true);
-    } finally {
-      saveBtn.disabled    = false;
-      saveBtn.textContent = TEXT_SAVE_BTN;
+    } catch (e) {
+      showMsg('Network error', true);
     }
-  };
 
-  input.addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
+    saveBtn.disabled = false;
+    saveBtn.textContent = TEXT_SAVE_BTN;
   });
 
-  // ── Init: page load pe state restore karo ────────────
-  document.addEventListener('DOMContentLoaded', function () {
+  // =========================
+  // INIT
+  // =========================
+  document.addEventListener('DOMContentLoaded', () => {
     setWishlistedUI(isWishlisted());
   });
 
