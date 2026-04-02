@@ -30,16 +30,13 @@ api_version = "2026-04"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
-  # 🔥 THIS IS THE IMPORTANT ONE FOR RESTOCK
-# Keep your inventory update
-[[webhooks.subscriptions]]
-topics = [ "inventory_levels/update" ]
-uri = "/webhooks/inventory-update"
+  [[webhooks.subscriptions]]
+  topics = [ "inventory_levels/update" ]
+  uri = "/webhooks/inventory-update"
 
-# Add the products update if you need it
-[[webhooks.subscriptions]]
-topics = [ "products/update" ]
-uri = "/webhooks/products-update"
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products-update"
 
 
 # ================================

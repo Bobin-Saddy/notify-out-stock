@@ -260,9 +260,20 @@ export async function action({ request }) {
 
     // --- CASE 1: BACK IN STOCK ---
     if (available > 0) {
-      const subscribers = await prisma.backInStock.findMany({ 
-        where: { inventoryItemId, notified: false } 
-      });
+  // NAYA — variantId se bhi dhundho:
+const variantGid = inv?.variant?.id; // "gid://shopify/ProductVariant/123"
+const variantIdClean = variantGid?.split('/').pop();
+
+const subscribers = await prisma.backInStock.findMany({ 
+  where: { 
+    notified: false,
+    shop: shop,
+    OR: [
+      { inventoryItemId: inventoryItemId },
+      ...(variantIdClean ? [{ variantId: variantIdClean }] : [])
+    ]
+  } 
+});
 
       console.log(`📧 Sending back-in-stock emails to ${subscribers.length} subscribers`);
 
