@@ -27,7 +27,6 @@ async function sendEmail(emailData) {
   }
 }
 
-// Get live inventory from Shopify
 async function getLiveInventory(admin, inventoryItemId) {
   try {
     const response = await admin.graphql(`
@@ -47,7 +46,6 @@ async function getLiveInventory(admin, inventoryItemId) {
   }
 }
 
-// Countdown badge — shown only when stock is low
 function getCountdownBadge(quantity, threshold = 200) {
   if (quantity === null || quantity > threshold) return '';
   const color   = quantity <= 3 ? '#dc2626' : quantity <= 7 ? '#f59e0b' : '#10b981';
@@ -59,7 +57,6 @@ function getCountdownBadge(quantity, threshold = 200) {
     </div>`;
 }
 
-// Price drop badge
 function getPriceDropBadge(oldPrice, newPrice, currency, percentageOff) {
   return `
     <div style="background:linear-gradient(135deg,#10b98122,#10b98144);border:2px solid #10b981;border-radius:12px;padding:16px 20px;margin:20px 0;text-align:center;">
@@ -94,7 +91,6 @@ export async function action({ request }) {
       return new Response("No quantity data", { status: 200 });
     }
 
-    // Load settings with safe defaults
     const settings = await prisma.appSettings.findUnique({ where: { shop } }) ?? {
       adminEmail:         process.env.ADMIN_EMAIL || 'admin@example.com',
       subjectLine:        'Out of stock products reminder',
@@ -127,10 +123,7 @@ export async function action({ request }) {
             }
           }
         }
-        shop {
-          currencyCode
-          name
-        }
+        shop { currencyCode name }
       }
     `, {
       variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` }
@@ -151,17 +144,24 @@ export async function action({ request }) {
       return new Response("Variant not found", { status: 200 });
     }
 
-    // Clean numeric variantId for DB query fallback
-    const variantIdClean = variant.id?.split('/').pop(); // "gid://shopify/ProductVariant/123" → "123"
-
-    const currency     = gqlJson.data?.shop?.currencyCode || "USD";
-    const shopName     = gqlJson.data?.shop?.name || shop;
-    const productImg   = variant.product.featuredImage?.url
+    const variantIdClean = variant.id?.split('/').pop();
+    const currency       = gqlJson.data?.shop?.currencyCode || "USD";
+    const shopName       = gqlJson.data?.shop?.name || shop;
+    const productImg     = variant.product.featuredImage?.url
       || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
-    const productUrl   = `https://${shop}/products/${variant.product.handle}`;
-    const currentPrice = parseFloat(variant.price);
+    const productUrl     = `https://${shop}/products/${variant.product.handle}`;
+    const currentPrice   = parseFloat(variant.price);
 
-    console.log("✅ Product found:", variant.product.title, "| variantId:", variantIdClean, "| available:", available);
+    console.log(`✅ Product: ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
+
+    // Shared OR query for subscribers
+    const subscriberWhere = {
+      shop,
+      OR: [
+        { inventoryItemId: inventoryItemId },
+        ...(variantIdClean ? [{ variantId: variantIdClean }] : [])
+      ]
+    };
 
     // ============================================================
     // CASE 1: BACK IN STOCK (available > 0)
@@ -169,33 +169,26 @@ export async function action({ request }) {
     if (available > 0) {
       console.log(`🟢 Product restocked (qty: ${available})`);
 
-      // ✅ Match by BOTH inventoryItemId AND variantId
-      // Handles subscribers where inventoryItemId was null at subscribe time
       const allSubscribers = await prisma.backInStock.findMany({
-        where: {
-          shop,
-          OR: [
-            { inventoryItemId: inventoryItemId },
-            ...(variantIdClean ? [{ variantId: variantIdClean }] : [])
-          ]
-        }
+        where: subscriberWhere
       });
 
-      console.log(`👥 Total subscribers for this product: ${allSubscribers.length}`);
+      console.log(`👥 Total subscribers: ${allSubscribers.length}`);
 
-      // ✅ Only send to pending (notified: false)
+      // ✅ Only notify those with notified: false
+      // notified: true means they were already told — don't spam them
+      // notified gets reset to false ONLY when stock goes to 0 (see CASE 2)
       const pendingSubscribers = allSubscribers.filter(s => !s.notified);
-      console.log(`📧 Pending subscribers to notify: ${pendingSubscribers.length}`);
+      console.log(`📧 Pending (not yet notified this cycle): ${pendingSubscribers.length}`);
 
       if (pendingSubscribers.length === 0) {
-        console.log("ℹ️ No pending subscribers — all already notified or none exist");
+        console.log("ℹ️ All subscribers already notified — no emails sent");
       }
 
-      // Get live stock once for all emails
+      // Get live stock once for all emails in this batch
       const liveStock    = await getLiveInventory(admin, inventoryItemId);
       const stockDisplay = liveStock !== null ? liveStock : available;
 
-      // Send back-in-stock emails
       for (const sub of pendingSubscribers) {
         const openUrl        = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl       = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
@@ -238,10 +231,11 @@ export async function action({ request }) {
 
         if (sent) {
           console.log(`✅ Back-in-stock email sent to ${sub.email}`);
+          // ✅ Mark as notified — stays TRUE until stock goes to 0 again
           await prisma.backInStock.update({
             where: { id: sub.id },
             data: {
-              notified:        true,
+              notified:        true,   // Will only reset when available <= 0
               subscribedPrice: sub.subscribedPrice ?? currentPrice
             }
           });
@@ -322,21 +316,17 @@ export async function action({ request }) {
     // CASE 2: OUT OF STOCK (available <= 0)
     // ============================================================
     else {
-      console.log("🔴 Product went out of stock");
+      console.log("🔴 Product went out of stock (available <= 0)");
 
-      // ✅ KEY FIX: Reset notified = false for ALL subscribers
-      // Next restock → everyone gets notified again
+      // ✅ KEY LOGIC: Reset notified = false ONLY when stock reaches 0
+      // This is the ONLY place where notified gets reset
+      // So subscribers won't get duplicate emails while product is in stock
+      // But WILL get notified again next time it restocks
       const resetResult = await prisma.backInStock.updateMany({
-        where: {
-          shop,
-          OR: [
-            { inventoryItemId: inventoryItemId },
-            ...(variantIdClean ? [{ variantId: variantIdClean }] : [])
-          ]
-        },
-        data: { notified: false }
+        where: subscriberWhere,
+        data:  { notified: false }
       });
-      console.log(`🔄 Reset notified=false for ${resetResult.count} subscribers (ready for next restock)`);
+      console.log(`🔄 Reset notified=false for ${resetResult.count} subscribers — ready for next restock`);
 
       // Send admin out-of-stock alert
       console.log("📧 Sending out-of-stock alert to admin:", settings.adminEmail);

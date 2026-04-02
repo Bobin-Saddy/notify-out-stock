@@ -85,7 +85,7 @@ export const action = async ({ request }) => {
       );
     }
 
-    // ✅ REAL-TIME STOCK CHECK
+    // ✅ REAL-TIME STOCK CHECK — Server side verify
     const isShopifyManaged = variant.inventoryManagement === "SHOPIFY";
     const liveQty = variant.inventoryQuantity ?? 0;
     const isOutOfStock = isShopifyManaged ? liveQty <= 0 : !variant.available;
@@ -97,41 +97,20 @@ export const action = async ({ request }) => {
       isOutOfStock
     });
 
-    if (!isOutOfStock) {
-      console.log("⚠️ PRODUCT IS IN STOCK — Subscription rejected");
-      return new Response(
-        JSON.stringify({
-          success: false,
-          message: "This product is currently in stock. No need to subscribe!"
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("✅ CONFIRMED OUT OF STOCK — Proceeding with subscription");
-
-    // ✅ Extract inventoryItemId from Shopify response (most reliable source)
-    // Never rely on client-sent inventoryItemId — always use Shopify GraphQL value
-    const rawInventoryId = variant.inventoryItem?.id; // "gid://shopify/InventoryItem/12345"
+    // ✅ Always extract IDs from Shopify GraphQL (never trust client)
+    const rawInventoryId = variant.inventoryItem?.id; // "gid://shopify/InventoryItem/123"
     const finalInventoryItemId = rawInventoryId ? rawInventoryId.split('/').pop() : null;
 
-    const rawProductId = variant.product?.id; // "gid://shopify/Product/99999"
+    const rawProductId = variant.product?.id;
     const finalProductId = productId || (rawProductId ? rawProductId.split('/').pop() : null);
 
-    const finalProductTitle  = productName || variant.product?.title || "Unknown Product";
-    const finalVariantTitle  = variantTitle || variant.title || variant.displayName || "Default";
+    const finalProductTitle    = productName || variant.product?.title || "Unknown Product";
+    const finalVariantTitle    = variantTitle || variant.title || variant.displayName || "Default";
     const finalSubscribedPrice = currentPrice
       ? parseFloat(currentPrice)
       : (variant.price ? parseFloat(variant.price) : 0);
 
-    console.log("📦 SAVING WITH:", {
-      variantId: String(variantId),
-      inventoryItemId: finalInventoryItemId,   // Should never be null now
-      productId: finalProductId,
-      productTitle: finalProductTitle,
-    });
-
-    // ✅ Check if already subscribed — check both variantId AND inventoryItemId
+    // ✅ Check if subscription already exists
     const existing = await prisma.backInStock.findFirst({
       where: {
         email,
@@ -144,17 +123,75 @@ export const action = async ({ request }) => {
     });
 
     if (existing) {
-      console.log("⚠️ ALREADY SUBSCRIBED:", email);
+      // ─── CASE A: Already subscribed AND notified AND still in stock
+      // Matlab: notification gayi thi, product abhi bhi in-stock hai
+      // Is case mein dobara subscribe karne ki zarurat nahi
+      if (existing.notified && !isOutOfStock) {
+        console.log("ℹ️ Already notified and product is still in stock:", email);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "You were already notified and this product is currently in stock. Go grab it! 🛒"
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // ─── CASE B: Already subscribed, notified, but product went out of stock again
+      // Reset karo taaki next restock pe phir notify ho
+      if (existing.notified && isOutOfStock) {
+        console.log("🔄 Previously notified but product is out of stock again — resetting for:", email);
+        await prisma.backInStock.update({
+          where: { id: existing.id },
+          data: {
+            notified:        false,
+            subscribedPrice: finalSubscribedPrice,
+            createdAt:       new Date()
+          }
+        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "You're back on the waitlist! We'll notify you when it's back in stock. 🔔"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // ─── CASE C: Already subscribed, not yet notified (still waiting)
+      if (!existing.notified) {
+        console.log("⚠️ Already on waitlist (pending notification):", email);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "You're already on the waitlist! We'll notify you when it's back in stock. 🔔"
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // ─── New subscription: only allow if product is OUT OF STOCK
+    if (!isOutOfStock) {
+      console.log("⚠️ PRODUCT IS IN STOCK — Subscription rejected");
       return new Response(
         JSON.stringify({
-          success: true,
-          message: "You're already subscribed to this product!"
+          success: false,
+          message: "This product is currently in stock. No need to subscribe!"
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
+        { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // ✅ Create subscription — inventoryItemId always from Shopify GraphQL
+    console.log("✅ CONFIRMED OUT OF STOCK — Creating new subscription");
+    console.log("📦 SAVING WITH:", {
+      variantId:       String(variantId),
+      inventoryItemId: finalInventoryItemId,
+      productId:       finalProductId,
+      productTitle:    finalProductTitle,
+    });
+
+    // ✅ Create new subscription
     const subscription = await prisma.backInStock.create({
       data: {
         email,
@@ -174,7 +211,7 @@ export const action = async ({ request }) => {
       id:              subscription.id,
       email:           subscription.email,
       variantId:       subscription.variantId,
-      inventoryItemId: subscription.inventoryItemId,  // Log karo — should not be null
+      inventoryItemId: subscription.inventoryItemId,
       productTitle:    subscription.productTitle,
     });
     console.log("=".repeat(80));
@@ -182,7 +219,7 @@ export const action = async ({ request }) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Successfully subscribed! We'll notify you when it's back in stock.",
+        message: "Successfully subscribed! We'll notify you when it's back in stock. 🔔",
         data: {
           id:           subscription.id,
           email:        subscription.email,

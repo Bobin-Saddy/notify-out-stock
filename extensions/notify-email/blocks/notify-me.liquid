@@ -1,14 +1,16 @@
 {% comment %}
   Only show notify button when product variant is OUT OF STOCK
   File: notify-me-button.liquid
+  Logic:
+    - notified: false + out of stock  → show button (subscribe karo)
+    - notified: true  + in stock      → button hide (already notified, product available)
+    - notified: true  + out of stock  → show button (product phir se OOS, re-subscribe)
+    - notified: false + in stock      → button hide (product available, no need)
+  Server-side (proxy/subscribe) handles all state validation.
 {% endcomment %}
-{% if product.selected_or_first_available_variant.available == false %}
 
 <style>
-.product-form__buttons, .shopify-payment-button { display:none !important; }
-
-/* Overlay */
-#bis-overlay {
+.bis-overlay-{{ block.id }} {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.55);
@@ -17,8 +19,7 @@
   z-index: 9998;
 }
 
-/* Modal */
-#bis-modal {
+.bis-modal-{{ block.id }} {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -38,27 +39,24 @@
 
 @keyframes bisPop {
   from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1);   }
 }
 
-/* Header */
-#bis-modal h3 {
+.bis-modal-{{ block.id }} h3 {
   margin: 0 0 8px;
   font-size: 22px;
   font-weight: 700;
   text-align: center;
 }
 
-/* Subheader */
-#bis-modal p.subtitle {
+.bis-modal-{{ block.id }} p.subtitle {
   margin: 0 0 20px;
   text-align: center;
   opacity: 0.8;
   font-size: 14px;
 }
 
-/* Close */
-#bis-close {
+.bis-close-{{ block.id }} {
   position: absolute;
   top: 12px;
   right: 14px;
@@ -69,18 +67,17 @@
   color: {{ block.settings.popup_text_color }};
 }
 
-/* Input */
-#bis-email {
+.bis-email-{{ block.id }} {
   width: 100%;
   padding: 14px;
   border-radius: 10px;
   border: 1px solid #ddd;
   font-size: 15px;
   margin-bottom: 14px;
+  box-sizing: border-box;
 }
 
-/* Subscribe Button */
-#bis-submit {
+.bis-submit-{{ block.id }} {
   width: 100%;
   padding: 14px;
   border-radius: 12px;
@@ -93,260 +90,260 @@
   transition: 0.3s;
 }
 
-#bis-submit:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
+.bis-submit-{{ block.id }}:hover   { opacity: 0.9; transform: translateY(-1px); }
+.bis-submit-{{ block.id }}:disabled { opacity: 0.6; cursor: not-allowed; }
 
-#bis-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Message */
-#bis-message {
+.bis-message-{{ block.id }} {
   margin-top: 12px;
   text-align: center;
   font-size: 14px;
 }
+.bis-message-{{ block.id }}.success { color: #10b981; }
+.bis-message-{{ block.id }}.error   { color: #ef4444; }
 
-#bis-message.success {
-  color: #10b981;
-}
-
-#bis-message.error {
-  color: #ef4444;
-}
-
-/* Main Button */
-#bis-btn { 
-  width:100%; 
-  padding:16px; 
+.bis-btn-{{ block.id }} {
+  width: 100%;
+  padding: 16px;
   background: linear-gradient(135deg, #111, #333);
-  color:white; 
-  cursor:pointer; 
-  border:none; 
-  border-radius: 10px; 
-  font-size: 16px; 
+  color: white;
+  cursor: pointer;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: bold;
   transition: all 0.3s;
+  display: none; /* JS controls visibility */
 }
 
-#bis-btn:hover {
+.bis-btn-{{ block.id }}:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 </style>
 
-<button id="bis-btn">
- {{ block.settings.button_text | default: 'Notify me when available' }}
+<button class="bis-btn-{{ block.id }}">
+  {{ block.settings.button_text | default: 'Notify me when available' }}
 </button>
 
-<div id="bis-overlay"></div>
+<div class="bis-overlay-{{ block.id }}"></div>
 
-<div id="bis-modal">
-  <button id="bis-close">✕</button>
-
+<div class="bis-modal-{{ block.id }}">
+  <button class="bis-close-{{ block.id }}">✕</button>
   <h3>{{ block.settings.headertext }}</h3>
   <p class="subtitle">{{ block.settings.subheadertext }}</p>
-
-  <input 
-    type="email" 
-    id="bis-email" 
-    placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}" 
+  <input
+    type="email"
+    class="bis-email-{{ block.id }}"
+    placeholder="{{ block.settings.email_placeholder | default: 'Enter your email' }}"
     required
   >
-
-  <button id="bis-submit">
+  <button class="bis-submit-{{ block.id }}">
     {{ block.settings.subscribe_text | default: 'Notify Me' }}
   </button>
-
-  <p id="bis-message"></p>
+  <p class="bis-message-{{ block.id }}"></p>
 </div>
 
 <script>
 (function() {
-  const btn = document.getElementById("bis-btn");
-  const modal = document.getElementById("bis-modal");
-  const overlay = document.getElementById("bis-overlay");
-  const closeBtn = document.getElementById("bis-close");
-  const submitBtn = document.getElementById("bis-submit");
-  const emailInput = document.getElementById("bis-email");
-  const messageEl = document.getElementById("bis-message");
+  const BLOCK_ID   = {{ block.id | json }};
+  const btn        = document.querySelector('.bis-btn-'     + BLOCK_ID);
+  const modal      = document.querySelector('.bis-modal-'   + BLOCK_ID);
+  const overlay    = document.querySelector('.bis-overlay-' + BLOCK_ID);
+  const closeBtn   = document.querySelector('.bis-close-'   + BLOCK_ID);
+  const submitBtn  = document.querySelector('.bis-submit-'  + BLOCK_ID);
+  const emailInput = document.querySelector('.bis-email-'   + BLOCK_ID);
+  const messageEl  = document.querySelector('.bis-message-' + BLOCK_ID);
 
-  function getCurrentVariant() {
-    return {{ product.selected_or_first_available_variant | json }};
+  const allVariants = {{ product.variants | json }};
+
+  // ─── Variant Detection ────────────────────────────────────────
+  function getSelectedVariantId() {
+    const params = new URLSearchParams(window.location.search);
+    const idFromUrl = params.get('variant');
+    if (idFromUrl) return parseInt(idFromUrl);
+
+    const selectEl = document.querySelector(
+      'select[name="id"], input[name="id"]:checked, [data-section-id] select[name="id"]'
+    );
+    if (selectEl) return parseInt(selectEl.value);
+
+    const firstAvailable = allVariants.find(v => v.available);
+    return firstAvailable ? firstAvailable.id : (allVariants[0]?.id ?? null);
   }
 
-  function updateVariantButton() {
-    const v = getCurrentVariant();
-    if (!v) return;
+  function getSelectedVariant() {
+    const id = getSelectedVariantId();
+    return allVariants.find(v => v.id === id) || null;
+  }
 
-    if (v.available) {
-      btn.style.display = "none";
-      modal.style.display = "none";
-      overlay.style.display = "none";
-    } else {
-      btn.style.display = "block";
+  function isCurrentVariantOutOfStock() {
+    const variant = getSelectedVariant();
+    if (!variant) return false;
+    // ✅ Show button ONLY when variant is unavailable (out of stock)
+    return !variant.available;
+  }
+
+  // ─── Button Visibility ────────────────────────────────────────
+  function updateButtonVisibility() {
+    const outOfStock = isCurrentVariantOutOfStock();
+    btn.style.display = outOfStock ? 'block' : 'none';
+
+    // Close modal if product came back in stock while modal was open
+    if (!outOfStock && modal.style.display === 'block') {
+      closeModal();
     }
   }
 
+  // ─── Modal Helpers ────────────────────────────────────────────
   function closeModal() {
-    modal.style.display = "none";
-    overlay.style.display = "none";
-    messageEl.textContent = "";
-    messageEl.className = "";
+    modal.style.display   = 'none';
+    overlay.style.display = 'none';
+    messageEl.textContent = '';
+    messageEl.className   = 'bis-message-' + BLOCK_ID;
   }
 
   function showMessage(text, isError = false) {
     messageEl.textContent = text;
-    messageEl.className = isError ? "error" : "success";
+    messageEl.className   = 'bis-message-' + BLOCK_ID + (isError ? ' error' : ' success');
   }
 
-  document.addEventListener("DOMContentLoaded", updateVariantButton);
+  // ─── Event Listeners ─────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', updateButtonVisibility);
+
+  // Native select / radio change
+  document.addEventListener('change', function(e) {
+    if (e.target.matches('select[name="id"]') || e.target.matches('input[name="id"]')) {
+      updateButtonVisibility();
+    }
+  });
+
+  // Shopify theme events (Dawn, etc.)
+  document.addEventListener('variant:change',       updateButtonVisibility);
+  document.addEventListener('variantChange',         updateButtonVisibility);
+  document.addEventListener('shopify:section:load', updateButtonVisibility);
+  window.addEventListener('popstate',               updateButtonVisibility);
+
+  // Polling fallback — only when modal is closed (perf safe)
+  let lastVariantId = null;
+  setInterval(function() {
+    if (modal.style.display === 'block') return;
+    const currentId = getSelectedVariantId();
+    if (currentId !== lastVariantId) {
+      lastVariantId = currentId;
+      updateButtonVisibility();
+    }
+  }, 500);
 
   // Open modal
-  btn.onclick = () => {
-    modal.style.display = "block";
-    overlay.style.display = "block";
-    emailInput.value = "";
-    messageEl.textContent = "";
-    messageEl.className = "";
+  btn.onclick = function() {
+    if (!isCurrentVariantOutOfStock()) return; // double-check
+    modal.style.display   = 'block';
+    overlay.style.display = 'block';
+    emailInput.value      = '';
+    messageEl.textContent = '';
+    messageEl.className   = 'bis-message-' + BLOCK_ID;
   };
 
-  // Close modal
   closeBtn.onclick = closeModal;
-  overlay.onclick = closeModal;
+  overlay.onclick  = closeModal;
 
-  // Submit form
-  submitBtn.onclick = async () => {
+  // ─── Submit ───────────────────────────────────────────────────
+  submitBtn.onclick = async function() {
     const email = emailInput.value.trim();
-    
-    // Validate email
-    if (!email) {
-      showMessage("Please enter your email", true);
-      return;
-    }
+
+    if (!email) { showMessage('Please enter your email', true); return; }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      showMessage("Please enter a valid email", true);
-      return;
-    }
+    if (!emailRegex.test(email)) { showMessage('Please enter a valid email', true); return; }
 
-    // Get current variant
-    const variant = getCurrentVariant();
-    if (!variant) {
-      showMessage("Product variant not found", true);
-      return;
-    }
+    const variant = getSelectedVariant();
+    if (!variant) { showMessage('Product variant not found', true); return; }
 
-    // Disable button during submission
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Subscribing...";
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Subscribing...';
 
     try {
-      // Prepare data
-      const shop = "{{ shop.permanent_domain }}";
+      const shop         = {{ shop.permanent_domain | json }};
       const productTitle = {{ product.title | json }};
-      const productId = {{ product.id | json }};
-      
-      // Get variant details
-      const variantId = variant.id.toString().replace('gid://shopify/ProductVariant/', '');
-      const variantTitle = variant.title || variant.name || "Default";
-      const inventoryItemId = variant.inventory_item_id ? variant.inventory_item_id.toString() : null;
+      const productId    = {{ product.id | json }};
+      const variantId    = variant.id.toString();
+      const variantTitle = variant.title || 'Default';
       const currentPrice = variant.price ? (variant.price / 100).toFixed(2) : '0.00';
-      
+
+      // Note: inventoryItemId is intentionally NOT sent from client
+      // Server (proxy/subscribe) always fetches it from Shopify GraphQL
       const requestData = {
-        email: email,
-        variantId: variantId,
-        inventoryItemId: inventoryItemId,
-        productId: String(productId),
+        email,
+        variantId,
+        productId:   String(productId),
         productName: productTitle,
-        variantTitle: variantTitle,
-        shop: shop,
-        currentPrice: currentPrice
+        variantTitle,
+        shop,
+        currentPrice
       };
-      
+
       console.log("📤 Sending subscription request:", requestData);
-      
+
       const response = await fetch('/apps/notify-out-stock/proxy/subscribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData)
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(requestData)
       });
 
-      // Log response for debugging
-      console.log("Response status:", response.status);
-
-      // Check if response has content
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        console.error("Response is not JSON. Content-Type:", contentType);
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
-        console.error("Response body:", text);
-        showMessage("Server error. Please try again.", true);
+        console.error("Non-JSON response:", text);
+        showMessage('Server error. Please try again.', true);
         return;
       }
 
       const data = await response.json();
-      console.log("Response data:", data);
+      console.log("📥 Response:", data);
 
-      if (response.ok && data.success) {
-        showMessage("✅ Subscribed! We'll notify you when it's back.", false);
-        emailInput.value = "";
-        
-        // Close modal after 2 seconds
-        setTimeout(closeModal, 2000);
+      if (data.success) {
+        showMessage(data.message || "✅ Subscribed! We'll notify you when it's back.", false);
+        emailInput.value = '';
+        setTimeout(closeModal, 2500);
       } else {
-        showMessage(data.message || data.error || "Subscription failed. Please try again.", true);
+        showMessage(data.message || data.error || 'Subscription failed. Please try again.', true);
       }
     } catch (error) {
-      console.error("Subscription error:", error);
-      showMessage("Network error. Please try again.", true);
+      console.error('BIS Error:', error);
+      showMessage('Network error. Please try again.', true);
     } finally {
-      submitBtn.disabled = false;
+      submitBtn.disabled    = false;
       submitBtn.textContent = {{ block.settings.subscribe_text | json }};
     }
   };
 
-  // Allow Enter key to submit
-  emailInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submitBtn.click();
-    }
+  emailInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitBtn.click(); }
   });
 })();
 </script>
-
-{% endif %}
 
 {% schema %}
 {
   "name": "Notify Me Button",
   "target": "section",
   "settings": [
-    { "type": "text", "id": "button_text", "label": "Button Text", "default": "Notify me when available" },
-    { "type": "text", "id": "headertext", "label": "Header Text", "default": "Get Notified" },
-    { "type": "text", "id": "subheadertext", "label": "Subheader Text", "default": "Enter your email and we'll notify you when this product is back in stock." },
-    { "type": "text", "id": "email_placeholder", "label": "Email Placeholder", "default": "Enter your email" },
-    { "type": "text", "id": "subscribe_text", "label": "Subscribe Button Text", "default": "Notify Me" },
-
-    { "type": "color", "id": "popup_bg_color", "label": "Popup Background Color", "default": "#ffffff" },
-    { "type": "color", "id": "popup_text_color", "label": "Popup Text Color", "default": "#000000" },
-
+    { "type": "text", "id": "button_text",       "label": "Button Text",            "default": "Notify me when available" },
+    { "type": "text", "id": "headertext",         "label": "Header Text",            "default": "Get Notified" },
+    { "type": "text", "id": "subheadertext",      "label": "Subheader Text",         "default": "Enter your email and we'll notify you when this product is back in stock." },
+    { "type": "text", "id": "email_placeholder",  "label": "Email Placeholder",      "default": "Enter your email" },
+    { "type": "text", "id": "subscribe_text",     "label": "Subscribe Button Text",  "default": "Notify Me" },
+    { "type": "color","id": "popup_bg_color",     "label": "Popup Background Color", "default": "#ffffff" },
+    { "type": "color","id": "popup_text_color",   "label": "Popup Text Color",       "default": "#000000" },
     {
       "type": "select",
       "id": "popup_font",
       "label": "Popup Font Family",
       "default": "Inter, sans-serif",
       "options": [
-        { "value": "Inter, sans-serif", "label": "Inter" },
-        { "value": "Poppins, sans-serif", "label": "Poppins" },
-        { "value": "Roboto, sans-serif", "label": "Roboto" },
+        { "value": "Inter, sans-serif",      "label": "Inter" },
+        { "value": "Poppins, sans-serif",    "label": "Poppins" },
+        { "value": "Roboto, sans-serif",     "label": "Roboto" },
         { "value": "Montserrat, sans-serif", "label": "Montserrat" }
       ]
     }
