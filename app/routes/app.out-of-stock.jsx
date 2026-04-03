@@ -16,24 +16,36 @@ export async function action({ request }) {
   const formData = await request.formData();
   
   const data = {
-    shop: session.shop,
-    adminEmail: formData.get("adminEmail"),
-    subjectLine: formData.get("subjectLine"),
-    includeSku: formData.get("includeSku") === "on",
-    includeVendor: formData.get("includeVendor") === "on",
-    includePrice: formData.get("includePrice") === "on",
-    includeTags: formData.get("includeTags") === "on",
+    shop:           session.shop,
+    adminEmail:     formData.get("adminEmail"),
+    adminLanguage:  formData.get("adminLanguage") || "en",
+    subjectLine:    formData.get("subjectLine"),
+    includeSku:     formData.get("includeSku")     === "on",
+    includeVendor:  formData.get("includeVendor")  === "on",
+    includePrice:   formData.get("includePrice")   === "on",
+    includeTags:    formData.get("includeTags")    === "on",
     updateViaEmail: formData.get("updateViaEmail") === "on",
   };
 
   await prisma.appSettings.upsert({
-    where: { shop: session.shop },
+    where:  { shop: session.shop },
     update: data,
     create: data,
   });
 
   return json({ success: true });
 }
+
+const LANGUAGES = [
+  { code: 'en', label: '🇬🇧 English' },
+  { code: 'hi', label: '🇮🇳 Hindi — हिन्दी' },
+  { code: 'fr', label: '🇫🇷 French — Français' },
+  { code: 'de', label: '🇩🇪 German — Deutsch' },
+  { code: 'es', label: '🇪🇸 Spanish — Español' },
+  { code: 'ar', label: '🇸🇦 Arabic — العربية' },
+  { code: 'zh', label: '🇨🇳 Chinese — 中文' },
+  { code: 'ja', label: '🇯🇵 Japanese — 日本語' },
+];
 
 export default function SettingsPage() {
   const { settings } = useLoaderData();
@@ -78,7 +90,28 @@ export default function SettingsPage() {
               />
               <button type="button" className="bg-black text-white px-10 rounded-xl font-bold">ADD</button>
             </div>
-            <p className="text-sm text-gray-500 italic">Currently, you can add 1 email for alerts. <span className="text-blue-600 underline">Upgrade Plan</span></p>
+            <p className="text-sm text-gray-500 italic">
+              Currently, you can add 1 email for alerts. <span className="text-blue-600 underline">Upgrade Plan</span>
+            </p>
+          </div>
+
+          {/* Admin Language */}
+          <div className="space-y-3">
+            <label className="block font-bold text-gray-600 uppercase text-xs tracking-wider">
+              Admin Alert Email Language
+            </label>
+            <p className="text-sm text-gray-500">
+              Out-of-stock alert emails to admin will be sent in this language.
+            </p>
+            <select
+              name="adminLanguage"
+              defaultValue={settings?.adminLanguage || 'en'}
+              className="w-full border border-gray-200 rounded-xl px-5 py-3.5 outline-none focus:ring-2 focus:ring-black/5 bg-white"
+            >
+              {LANGUAGES.map(l => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
+            </select>
           </div>
         </section>
 
@@ -87,10 +120,10 @@ export default function SettingsPage() {
           <h2 className="text-2xl font-bold">Email Display Preferences</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border border-gray-100 rounded-2xl p-10 bg-gray-50/50 shadow-sm">
             <CustomCheckbox label="Update inventory via email?" name="updateViaEmail" defaultChecked={settings?.updateViaEmail} subtext="Reply to mail to sync stock" />
-            <CustomCheckbox label="Include SKU in email?" name="includeSku" defaultChecked={settings?.includeSku ?? true} />
-            <CustomCheckbox label="Include price in email?" name="includePrice" defaultChecked={settings?.includePrice} />
-            <CustomCheckbox label="Include vendor in email?" name="includeVendor" defaultChecked={settings?.includeVendor ?? true} />
-            <CustomCheckbox label="Include tags in email?" name="includeTags" defaultChecked={settings?.includeTags} />
+            <CustomCheckbox label="Include SKU in email?"    name="includeSku"     defaultChecked={settings?.includeSku ?? true} />
+            <CustomCheckbox label="Include price in email?"  name="includePrice"   defaultChecked={settings?.includePrice} />
+            <CustomCheckbox label="Include vendor in email?" name="includeVendor"  defaultChecked={settings?.includeVendor ?? true} />
+            <CustomCheckbox label="Include tags in email?"   name="includeTags"    defaultChecked={settings?.includeTags} />
           </div>
         </section>
 
@@ -117,12 +150,7 @@ function CustomCheckbox({ label, name, defaultChecked, subtext }) {
   return (
     <div className="flex flex-col gap-1 p-2">
       <label className="flex items-start gap-3 cursor-pointer group">
-        <input 
-          type="checkbox" 
-          name={name} 
-          defaultChecked={defaultChecked} 
-          className="mt-1 w-5 h-5 accent-black" 
-        />
+        <input type="checkbox" name={name} defaultChecked={defaultChecked} className="mt-1 w-5 h-5 accent-black" />
         <div className="flex flex-col">
           <span className="text-sm font-bold text-gray-800">{label}</span>
           {subtext && <span className="text-[10px] text-gray-400 font-medium italic">{subtext}</span>}

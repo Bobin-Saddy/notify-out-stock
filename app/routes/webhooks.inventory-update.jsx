@@ -482,12 +482,15 @@ export async function action({ request }) {
           </div>
         </div>`;
 
-      const sent = await sendEmail({
-        from:    'Inventory Manager <onboarding@resend.dev>',
-        to:      settings.adminEmail,
-        subject: `🚨 Stock Out: ${variant.product.title}`,
-        html:    adminHtml
-      });
+const adminLang = settings.adminLanguage || 'en';
+const tAdmin = getT(adminLang);
+
+const sent = await sendEmail({
+  from:    'Inventory Manager <onboarding@resend.dev>',
+  to:      settings.adminEmail,
+  subject: `🚨 ${tAdmin.urgencyHurry ? 'Stock Out' : 'Stock Out'}: ${variant.product.title}`,
+  html:    adminHtml
+});
       console.log(sent ? "✅ Admin alert sent" : "❌ Admin alert failed");
     }
 
