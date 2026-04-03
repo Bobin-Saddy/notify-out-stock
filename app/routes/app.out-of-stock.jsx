@@ -47,7 +47,7 @@ const LANGUAGES = [
   { code: 'ja', label: '🇯🇵 Japanese — 日本語' },
 ];
 
-export default function SettingsPage() {
+export default function out_of_stock() {
   const { settings } = useLoaderData();
   const navigation = useNavigation();
   const isSaving = navigation.state === "submitting";
