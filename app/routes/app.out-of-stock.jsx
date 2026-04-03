@@ -129,7 +129,7 @@ export default function SettingsPage() {
 
         {/* Email Subject */}
         <section className="space-y-6">
-          <h2 className="text-2xl font-bold">Additional Settings (Optional)</h2>
+          <h2 className="text-2xl font-bold"></h2>
           <div className="space-y-4">
             <label className="block font-bold text-gray-600 uppercase text-xs tracking-wider">Email Subject Line</label>
             <input 
