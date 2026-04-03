@@ -2,157 +2,92 @@
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
-// ─── Email translations ───────────────────────────────────────
-const EMAIL_TRANSLATIONS = {
-  en: {
-    footer:        "You're receiving this because you subscribed to alerts for this product.",
-    priceDropHead: '💰 Price Drop Alert!',
-    priceDropSave: (pct) => `Save ${pct}% - Limited Time!`,
-    priceDropCta:  'Shop Now & Save',
-    viewProduct:   'View Product',
-    priceDropIntro: (shop) => `Great news! The price just dropped on ${shop}.`,
-    outOfStockNote: "We'll notify you when it's back in stock at this great price!",
-    // Admin out-of-stock translations
-    adminSubject:  (title) => `🚨 Stock Out: ${title}`,
-    adminHeading:  'Inventory Alert',
-    adminProduct:  'Product',
-    adminVariant:  'Variant',
-    adminSku:      'SKU',
-    adminVendor:   'Vendor',
-    adminPrice:    'Price',
-    adminManage:   'Manage Inventory',
-  },
-  hi: {
-    footer:        'आपको यह इसलिए मिल रहा है क्योंकि आपने इस उत्पाद के लिए अलर्ट की सदस्यता ली थी।',
-    priceDropHead: '💰 मूल्य में गिरावट!',
-    priceDropSave: (pct) => `${pct}% बचाएं - सीमित समय!`,
-    priceDropCta:  'अभी खरीदें और बचाएं',
-    viewProduct:   'उत्पाद देखें',
-    priceDropIntro: (shop) => `अच्छी खबर! ${shop} पर कीमत गिर गई है।`,
-    outOfStockNote: "जब यह वापस स्टॉक में आएगा तो हम आपको सूचित करेंगे!",
-    adminSubject:  (title) => `🚨 स्टॉक खत्म: ${title}`,
-    adminHeading:  'इन्वेंटरी अलर्ट',
-    adminProduct:  'उत्पाद',
-    adminVariant:  'वेरिएंट',
-    adminSku:      'SKU',
-    adminVendor:   'विक्रेता',
-    adminPrice:    'कीमत',
-    adminManage:   'इन्वेंटरी प्रबंधित करें',
-  },
-  fr: {
-    footer:        "Vous recevez ceci parce que vous vous êtes abonné aux alertes pour ce produit.",
-    priceDropHead: '💰 Alerte Baisse de Prix !',
-    priceDropSave: (pct) => `Économisez ${pct}% - Temps limité !`,
-    priceDropCta:  'Achetez et Économisez',
-    viewProduct:   'Voir le Produit',
-    priceDropIntro: (shop) => `Bonne nouvelle ! Le prix vient de baisser sur ${shop}.`,
-    outOfStockNote: "Nous vous notifierons quand il sera de retour en stock !",
-    adminSubject:  (title) => `🚨 Rupture de Stock : ${title}`,
-    adminHeading:  'Alerte Inventaire',
-    adminProduct:  'Produit',
-    adminVariant:  'Variante',
-    adminSku:      'SKU',
-    adminVendor:   'Fournisseur',
-    adminPrice:    'Prix',
-    adminManage:   "Gérer l'Inventaire",
-  },
-  de: {
-    footer:        "Sie erhalten dies, weil Sie Benachrichtigungen für dieses Produkt abonniert haben.",
-    priceDropHead: '💰 Preissenkung!',
-    priceDropSave: (pct) => `${pct}% sparen - Begrenzte Zeit!`,
-    priceDropCta:  'Jetzt kaufen & sparen',
-    viewProduct:   'Produkt ansehen',
-    priceDropIntro: (shop) => `Gute Neuigkeiten! Der Preis ist bei ${shop} gesunken.`,
-    outOfStockNote: "Wir benachrichtigen Sie, wenn es wieder vorrätig ist!",
-    adminSubject:  (title) => `🚨 Nicht vorrätig: ${title}`,
-    adminHeading:  'Lagerbestand-Alarm',
-    adminProduct:  'Produkt',
-    adminVariant:  'Variante',
-    adminSku:      'SKU',
-    adminVendor:   'Anbieter',
-    adminPrice:    'Preis',
-    adminManage:   'Lagerbestand verwalten',
-  },
-  es: {
-    footer:        "Recibes esto porque te suscribiste a las alertas de este producto.",
-    priceDropHead: '💰 ¡Alerta de Bajada de Precio!',
-    priceDropSave: (pct) => `¡Ahorra ${pct}% - Tiempo limitado!`,
-    priceDropCta:  'Compra y Ahorra',
-    viewProduct:   'Ver Producto',
-    priceDropIntro: (shop) => `¡Buenas noticias! El precio acaba de bajar en ${shop}.`,
-    outOfStockNote: "¡Te notificaremos cuando vuelva a estar en stock!",
-    adminSubject:  (title) => `🚨 Sin Stock: ${title}`,
-    adminHeading:  'Alerta de Inventario',
-    adminProduct:  'Producto',
-    adminVariant:  'Variante',
-    adminSku:      'SKU',
-    adminVendor:   'Proveedor',
-    adminPrice:    'Precio',
-    adminManage:   'Gestionar Inventario',
-  },
-  ar: {
-    footer:        "تلقيت هذا لأنك اشتركت في تنبيهات هذا المنتج.",
-    priceDropHead: '💰 تنبيه انخفاض السعر!',
-    priceDropSave: (pct) => `وفر ${pct}% - لفترة محدودة!`,
-    priceDropCta:  'تسوق الآن ووفّر',
-    viewProduct:   'عرض المنتج',
-    priceDropIntro: (shop) => `أخبار رائعة! انخفض السعر في ${shop}.`,
-    outOfStockNote: "سنخطرك عندما يعود إلى المخزون!",
-    adminSubject:  (title) => `🚨 نفاد المخزون: ${title}`,
-    adminHeading:  'تنبيه المخزون',
-    adminProduct:  'المنتج',
-    adminVariant:  'المتغير',
-    adminSku:      'SKU',
-    adminVendor:   'المورد',
-    adminPrice:    'السعر',
-    adminManage:   'إدارة المخزون',
-  },
-  zh: {
-    footer:        "您收到此邮件是因为您订阅了此产品的提醒。",
-    priceDropHead: '💰 降价提醒！',
-    priceDropSave: (pct) => `节省 ${pct}% — 限时优惠！`,
-    priceDropCta:  '立即抢购省钱',
-    viewProduct:   '查看产品',
-    priceDropIntro: (shop) => `好消息！${shop} 的价格刚刚下降了。`,
-    outOfStockNote: "补货后我们将立即通知您！",
-    adminSubject:  (title) => `🚨 缺货：${title}`,
-    adminHeading:  '库存警告',
-    adminProduct:  '产品',
-    adminVariant:  '变体',
-    adminSku:      'SKU',
-    adminVendor:   '供应商',
-    adminPrice:    '价格',
-    adminManage:   '管理库存',
-  },
-  ja: {
-    footer:        "このメールは商品アラートにご登録いただいたためお送りしています。",
-    priceDropHead: '💰 値下げのお知らせ！',
-    priceDropSave: (pct) => `${pct}% OFF — 期間限定！`,
-    priceDropCta:  '今すぐお得に購入',
-    viewProduct:   '商品を見る',
-    priceDropIntro: (shop) => `嬉しいお知らせです！${shop} で価格が下がりました。`,
-    outOfStockNote: "在庫が戻り次第お知らせします！",
-    adminSubject:  (title) => `🚨 在庫切れ：${title}`,
-    adminHeading:  '在庫アラート',
-    adminProduct:  '商品',
-    adminVariant:  'バリアント',
-    adminSku:      'SKU',
-    adminVendor:   'ベンダー',
-    adminPrice:    '価格',
-    adminManage:   '在庫を管理',
-  },
-};
-
+// ─── Supported languages ──────────────────────────────────────
 const SUPPORTED_LANGS = ['en', 'hi', 'fr', 'de', 'es', 'ar', 'zh', 'ja'];
-
-function getT(lang) {
-  const resolved = SUPPORTED_LANGS.includes(lang) ? lang : 'en';
-  return EMAIL_TRANSLATIONS[resolved];
-}
 
 function resolveLang(raw) {
   const cleaned = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
   return SUPPORTED_LANGS.includes(cleaned) ? cleaned : 'en';
+}
+
+// ─── Email translations ───────────────────────────────────────
+const EMAIL_TRANSLATIONS = {
+  en: {
+    footer:         "You're receiving this because you subscribed to alerts for this product.",
+    priceDropHead:  '💰 Price Drop Alert!',
+    priceDropSave:  (pct) => `Save ${pct}% - Limited Time!`,
+    priceDropCta:   'Shop Now & Save',
+    viewProduct:    'View Product',
+    priceDropIntro: (shop) => `Great news! The price just dropped on ${shop}.`,
+    outOfStockNote: "We'll notify you when it's back in stock at this great price!",
+  },
+  hi: {
+    footer:         'आपको यह इसलिए मिल रहा है क्योंकि आपने इस उत्पाद के लिए अलर्ट की सदस्यता ली थी।',
+    priceDropHead:  '💰 मूल्य में गिरावट!',
+    priceDropSave:  (pct) => `${pct}% बचाएं - सीमित समय!`,
+    priceDropCta:   'अभी खरीदें और बचाएं',
+    viewProduct:    'उत्पाद देखें',
+    priceDropIntro: (shop) => `अच्छी खबर! ${shop} पर कीमत गिर गई है।`,
+    outOfStockNote: "जब यह वापस स्टॉक में आएगा तो हम आपको सूचित करेंगे!",
+  },
+  fr: {
+    footer:         "Vous recevez ceci parce que vous vous êtes abonné aux alertes pour ce produit.",
+    priceDropHead:  '💰 Alerte Baisse de Prix !',
+    priceDropSave:  (pct) => `Économisez ${pct}% - Temps limité !`,
+    priceDropCta:   'Achetez et Économisez',
+    viewProduct:    'Voir le Produit',
+    priceDropIntro: (shop) => `Bonne nouvelle ! Le prix vient de baisser sur ${shop}.`,
+    outOfStockNote: "Nous vous notifierons quand il sera de retour en stock !",
+  },
+  de: {
+    footer:         "Sie erhalten dies, weil Sie Benachrichtigungen für dieses Produkt abonniert haben.",
+    priceDropHead:  '💰 Preissenkung!',
+    priceDropSave:  (pct) => `${pct}% sparen - Begrenzte Zeit!`,
+    priceDropCta:   'Jetzt kaufen & sparen',
+    viewProduct:    'Produkt ansehen',
+    priceDropIntro: (shop) => `Gute Neuigkeiten! Der Preis ist bei ${shop} gesunken.`,
+    outOfStockNote: "Wir benachrichtigen Sie, wenn es wieder vorrätig ist!",
+  },
+  es: {
+    footer:         "Recibes esto porque te suscribiste a las alertas de este producto.",
+    priceDropHead:  '💰 ¡Alerta de Bajada de Precio!',
+    priceDropSave:  (pct) => `¡Ahorra ${pct}% - Tiempo limitado!`,
+    priceDropCta:   'Compra y Ahorra',
+    viewProduct:    'Ver Producto',
+    priceDropIntro: (shop) => `¡Buenas noticias! El precio acaba de bajar en ${shop}.`,
+    outOfStockNote: "¡Te notificaremos cuando vuelva a estar en stock!",
+  },
+  ar: {
+    footer:         "تلقيت هذا لأنك اشتركت في تنبيهات هذا المنتج.",
+    priceDropHead:  '💰 تنبيه انخفاض السعر!',
+    priceDropSave:  (pct) => `وفر ${pct}% - لفترة محدودة!`,
+    priceDropCta:   'تسوق الآن ووفّر',
+    viewProduct:    'عرض المنتج',
+    priceDropIntro: (shop) => `أخبار رائعة! انخفض السعر في ${shop}.`,
+    outOfStockNote: "سنخطرك عندما يعود إلى المخزون!",
+  },
+  zh: {
+    footer:         "您收到此邮件是因为您订阅了此产品的提醒。",
+    priceDropHead:  '💰 降价提醒！',
+    priceDropSave:  (pct) => `节省 ${pct}% — 限时优惠！`,
+    priceDropCta:   '立即抢购省钱',
+    viewProduct:    '查看产品',
+    priceDropIntro: (shop) => `好消息！${shop} 的价格刚刚下降了。`,
+    outOfStockNote: "补货后我们将立即通知您！",
+  },
+  ja: {
+    footer:         "このメールは商品アラートにご登録いただいたためお送りしています。",
+    priceDropHead:  '💰 値下げのお知らせ！',
+    priceDropSave:  (pct) => `${pct}% OFF — 期間限定！`,
+    priceDropCta:   '今すぐお得に購入',
+    viewProduct:    '商品を見る',
+    priceDropIntro: (shop) => `嬉しいお知らせです！${shop} で価格が下がりました。`,
+    outOfStockNote: "在庫が戻り次第お知らせします！",
+  },
+};
+
+function getT(lang) {
+  return EMAIL_TRANSLATIONS[resolveLang(lang)];
 }
 
 // ─── Email sender ─────────────────────────────────────────────
@@ -166,11 +101,73 @@ async function sendEmail(emailData) {
       },
       body: JSON.stringify(emailData)
     });
+    const resBody = await res.json().catch(() => ({}));
+    if (!res.ok) console.error("❌ Resend Error:", JSON.stringify(resBody));
+    else         console.log("✅ Resend accepted:", resBody.id);
     return res.ok;
   } catch (err) {
-    console.error("Email failed:", err.message);
+    console.error("❌ Email failed:", err.message);
     return false;
   }
+}
+
+// ─── Shopify se variant details fetch karo ────────────────────
+async function fetchVariantDetails(admin, variantId) {
+  const res  = await admin.graphql(`
+    query getVariant($id: ID!) {
+      productVariant(id: $id) {
+        displayName price inventoryQuantity
+        product { title handle featuredImage { url } }
+      }
+      shop { currencyCode name }
+    }
+  `, { variables: { id: `gid://shopify/ProductVariant/${variantId}` } });
+
+  const json = await res.json();
+  if (json.errors) {
+    console.error("❌ GraphQL Error:", JSON.stringify(json.errors));
+    return null;
+  }
+  return json.data;
+}
+
+// ─── Price drop email HTML ────────────────────────────────────
+function buildPriceDropHtml({ t, shopName, productTitle, displayName, productImg, currency, subscribedPrice, currentPrice, percentageOff, inventoryQty, clickUrl, openUrl }) {
+  const priceDropBadge = `
+    <div style="background:linear-gradient(135deg,#10b98122,#10b98144);border:2px solid #10b981;border-radius:12px;padding:16px 20px;margin:20px 0;text-align:center;">
+      <p style="margin:0;color:#10b981;font-weight:800;font-size:20px;">${t.priceDropHead}</p>
+      <div style="margin-top:10px;">
+        <span style="color:#9ca3af;font-size:16px;text-decoration:line-through;">${currency} ${subscribedPrice.toFixed(2)}</span>
+        <span style="color:#111827;font-size:28px;font-weight:900;margin-left:10px;">${currency} ${currentPrice.toFixed(2)}</span>
+      </div>
+      <p style="margin:10px 0 0;color:#10b981;font-size:16px;font-weight:bold;">${t.priceDropSave(percentageOff)}</p>
+    </div>`;
+
+  return `
+    <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
+      <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
+        <tr><td style="padding:40px;text-align:center;">
+          <h1 style="color:#111827;font-size:28px;font-weight:800;margin:0;">${t.priceDropHead}</h1>
+          <p style="color:#6b7280;margin:10px 0 0;">${t.priceDropIntro(shopName)}</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 40px;text-align:center;">
+          <div style="background:#f9fafb;border-radius:20px;padding:30px;">
+            <img src="${productImg}" style="width:100%;max-width:250px;border-radius:12px;margin-bottom:20px;" alt="${productTitle}">
+            <h2 style="color:#111827;margin:0 0 8px;">${productTitle}</h2>
+            <p style="color:#6b7280;margin:0 0 12px;">${displayName}</p>
+            ${priceDropBadge}
+            <a href="${clickUrl}" style="display:inline-block;background:${inventoryQty > 0 ? '#10b981' : '#6b7280'};color:white;padding:16px 40px;border-radius:12px;text-decoration:none;font-weight:bold;margin-top:10px;">
+              ${inventoryQty > 0 ? t.priceDropCta : t.viewProduct}
+            </a>
+            ${inventoryQty <= 0 ? `<p style="color:#6b7280;font-size:14px;margin-top:15px;">${t.outOfStockNote}</p>` : ''}
+          </div>
+        </td></tr>
+        <tr><td style="padding:0 40px 30px;text-align:center;">
+          <p style="color:#9ca3af;font-size:12px;margin:0;">${t.footer}</p>
+        </td></tr>
+      </table>
+      <img src="${openUrl}" width="1" height="1" style="display:none;" alt="">
+    </div>`;
 }
 
 // ─── Main webhook action ──────────────────────────────────────
@@ -200,12 +197,13 @@ export async function action({ request }) {
     console.log(`📦 Product: ${product.title}, Variants: ${variants.length}`);
 
     for (const variant of variants) {
-      const variantId        = String(variant.id);
-      const inventoryItemId  = String(variant.inventory_item_id);
-      const currentPrice     = parseFloat(variant.price);
+      const variantId       = String(variant.id);
+      const inventoryItemId = String(variant.inventory_item_id);
+      const currentPrice    = parseFloat(variant.price);
 
       console.log(`🔍 Variant ${variantId}, Price: ${currentPrice}`);
 
+      // ✅ Saare subscribers fetch karo — notified aur pending dono
       const subscribers = await prisma.backInStock.findMany({
         where: {
           shop,
@@ -218,11 +216,15 @@ export async function action({ request }) {
 
       console.log(`👥 ${subscribers.length} subscribers found`);
 
+      // ✅ Variant details ek baar fetch karo — sab ke liye reuse hoga
+      let variantDetails = null;
+
       for (const sub of subscribers) {
         const subscribedPrice = sub.subscribedPrice;
 
-        // No price set yet — initialize
+        // ── No price yet — initialize ─────────────────────────
         if (!subscribedPrice || subscribedPrice === 0) {
+          console.log(`⚙️ Initializing price for ${sub.email}: ${currentPrice}`);
           await prisma.backInStock.update({
             where: { id: sub.id },
             data:  { subscribedPrice: currentPrice }
@@ -237,39 +239,26 @@ export async function action({ request }) {
           console.log(`💰 Price drop for ${sub.email}: ${subscribedPrice} → ${currentPrice} (${percentageOff}%)`);
 
           if (percentageOff < (settings.priceDropThreshold || 5)) {
-            console.log(`⚠️ Below threshold ${settings.priceDropThreshold}% — skipping`);
+            console.log(`⚠️ Below threshold — skipping`);
             continue;
           }
 
           try {
-            // ✅ Subscriber ki language use karo
+            // ✅ Subscriber ki language resolve karo
             const lang = resolveLang(sub.language);
             const t    = getT(lang);
 
-            console.log(`🌐 [${lang.toUpperCase()}] Sending price drop email → ${sub.email}`);
+            console.log(`🌐 [${lang.toUpperCase()}] DB language="${sub.language}" → Price drop email → ${sub.email}`);
 
-            // Shopify se product details fetch karo
-            const gqlRes = await admin.graphql(`
-              query getVariant($id: ID!) {
-                productVariant(id: $id) {
-                  displayName price inventoryQuantity
-                  product { title handle featuredImage { url } }
-                }
-                shop { currencyCode name }
-              }
-            `, { variables: { id: `gid://shopify/ProductVariant/${variantId}` } });
-
-            const json = await gqlRes.json();
-            if (json.errors) {
-              console.error("❌ GraphQL Error:", JSON.stringify(json.errors));
-              continue;
+            // Variant details cache karo
+            if (!variantDetails) {
+              variantDetails = await fetchVariantDetails(admin, variantId);
             }
+            if (!variantDetails) continue;
 
-            const variantData  = json.data?.productVariant;
-            if (!variantData) continue;
-
-            const currency     = json.data?.shop?.currencyCode || "USD";
-            const shopName     = json.data?.shop?.name || shop;
+            const variantData  = variantDetails.productVariant;
+            const currency     = variantDetails.shop?.currencyCode || "USD";
+            const shopName     = variantDetails.shop?.name || shop;
             const productImg   = variantData.product.featuredImage?.url
               || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png";
             const productUrl   = `https://${shop}/products/${variantData.product.handle}`;
@@ -277,41 +266,19 @@ export async function action({ request }) {
             const openUrl      = `${APP_URL}api/track-open?id=${sub.id}`;
             const clickUrl     = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
 
-            const priceDropBadge = `
-              <div style="background:linear-gradient(135deg,#10b98122,#10b98144);border:2px solid #10b981;border-radius:12px;padding:16px 20px;margin:20px 0;text-align:center;">
-                <p style="margin:0;color:#10b981;font-weight:800;font-size:20px;">${t.priceDropHead}</p>
-                <div style="margin-top:10px;">
-                  <span style="color:#9ca3af;font-size:16px;text-decoration:line-through;">${currency} ${subscribedPrice.toFixed(2)}</span>
-                  <span style="color:#111827;font-size:28px;font-weight:900;margin-left:10px;">${currency} ${currentPrice.toFixed(2)}</span>
-                </div>
-                <p style="margin:10px 0 0;color:#10b981;font-size:16px;font-weight:bold;">${t.priceDropSave(percentageOff)}</p>
-              </div>`;
-
-            const html = `
-              <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
-                <table align="center" width="100%" style="max-width:550px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 10px 15px rgba(0,0,0,0.1);">
-                  <tr><td style="padding:40px;text-align:center;">
-                    <h1 style="color:#111827;font-size:28px;font-weight:800;margin:0;">${t.priceDropHead}</h1>
-                    <p style="color:#6b7280;margin:10px 0 0;">${t.priceDropIntro(shopName)}</p>
-                  </td></tr>
-                  <tr><td style="padding:0 40px 40px;text-align:center;">
-                    <div style="background:#f9fafb;border-radius:20px;padding:30px;">
-                      <img src="${productImg}" style="width:100%;max-width:250px;border-radius:12px;margin-bottom:20px;" alt="${variantData.product.title}">
-                      <h2 style="color:#111827;margin:0 0 8px;">${variantData.product.title}</h2>
-                      <p style="color:#6b7280;margin:0 0 12px;">${variantData.displayName}</p>
-                      ${priceDropBadge}
-                      <a href="${clickUrl}" style="display:inline-block;background:${inventoryQty > 0 ? '#10b981' : '#6b7280'};color:white;padding:16px 40px;border-radius:12px;text-decoration:none;font-weight:bold;margin-top:10px;">
-                        ${inventoryQty > 0 ? t.priceDropCta : t.viewProduct}
-                      </a>
-                      ${inventoryQty <= 0 ? `<p style="color:#6b7280;font-size:14px;margin-top:15px;">${t.outOfStockNote}</p>` : ''}
-                    </div>
-                  </td></tr>
-                  <tr><td style="padding:0 40px 30px;text-align:center;">
-                    <p style="color:#9ca3af;font-size:12px;margin:0;">${t.footer}</p>
-                  </td></tr>
-                </table>
-                <img src="${openUrl}" width="1" height="1" style="display:none;" alt="">
-              </div>`;
+            const html = buildPriceDropHtml({
+              t, shopName,
+              productTitle:   variantData.product.title,
+              displayName:    variantData.displayName,
+              productImg,
+              currency,
+              subscribedPrice,
+              currentPrice,
+              percentageOff,
+              inventoryQty,
+              clickUrl,
+              openUrl
+            });
 
             const sent = await sendEmail({
               from:    `${shopName} <onboarding@resend.dev>`,
@@ -324,14 +291,17 @@ export async function action({ request }) {
               console.log(`✅ [${lang.toUpperCase()}] Price drop email sent → ${sub.email}`);
               await prisma.backInStock.update({
                 where: { id: sub.id },
-                data:  { subscribedPrice: currentPrice }
+                data:  {
+                  subscribedPrice: currentPrice,
+                  language:        lang   // ✅ DB mein language update karo
+                }
               });
             } else {
               console.log(`❌ Failed → ${sub.email}`);
             }
 
           } catch (err) {
-            console.error(`❌ Error for subscriber ${sub.id}:`, err);
+            console.error(`❌ Error for subscriber ${sub.id}:`, err.message);
           }
 
         // ── PRICE INCREASED ───────────────────────────────────
@@ -342,6 +312,7 @@ export async function action({ request }) {
             data:  { subscribedPrice: currentPrice }
           });
 
+        // ── PRICE UNCHANGED ───────────────────────────────────
         } else {
           console.log(`➡️ Price unchanged at ${currentPrice} for ${sub.email}`);
         }
@@ -352,7 +323,8 @@ export async function action({ request }) {
     return new Response("OK", { status: 200 });
 
   } catch (err) {
-    console.error("❌ Product Update Webhook Error:", err);
+    console.error("❌ Product Update Webhook Error:", err.message);
+    console.error(err.stack);
     return new Response("Error", { status: 500 });
   }
 }
