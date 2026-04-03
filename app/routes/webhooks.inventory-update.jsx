@@ -2,108 +2,181 @@
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
+// ─── Supported languages ──────────────────────────────────────
+const SUPPORTED_LANGS = ['en', 'hi', 'fr', 'de', 'es', 'ar', 'zh', 'ja'];
+
+function resolveLang(raw) {
+  const cleaned = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return SUPPORTED_LANGS.includes(cleaned) ? cleaned : 'en';
+}
+
 // ─── Email translations ───────────────────────────────────────
 const EMAIL_TRANSLATIONS = {
   en: {
-    subject:       (title, limited) => `🎉 Back in Stock: ${title}${limited ? ' — Limited Quantity!' : ''}`,
-    heading:       '🎉 Back In Stock!',
-    intro:         (title, shop) => `Good news! <strong>${title}</strong> is now available at <strong>${shop}</strong>.`,
-    cta:           'Buy Now',
-    footer:        "You're receiving this because you subscribed to back-in-stock alerts.",
-    urgencyOnly:   'Only', urgencyJust: 'Just', urgencyLeft: 'Left in Stock!',
-    urgencyHurry:  'Hurry before it sells out again',
-    priceDropHead: '💰 Price Drop Alert!',
-    priceDropSave: (pct) => `Save ${pct}% - Limited Time!`,
-    priceDropCta:  'Shop Now & Save',
+    subject:        (title, limited) => `🎉 Back in Stock: ${title}${limited ? ' — Limited Quantity!' : ''}`,
+    heading:        '🎉 Back In Stock!',
+    intro:          (title, shop) => `Good news! <strong>${title}</strong> is now available at <strong>${shop}</strong>.`,
+    cta:            'Buy Now',
+    footer:         "You're receiving this because you subscribed to back-in-stock alerts.",
+    urgencyOnly:    'Only', urgencyJust: 'Just', urgencyLeft: 'Left in Stock!',
+    urgencyHurry:   'Hurry before it sells out again',
+    priceDropHead:  '💰 Price Drop Alert!',
+    priceDropSave:  (pct) => `Save ${pct}% - Limited Time!`,
+    priceDropCta:   'Shop Now & Save',
+    // Admin out-of-stock
+    adminSubject:   (title) => `🚨 Stock Out: ${title}`,
+    adminHeading:   'Inventory Alert',
+    adminProduct:   'Product',
+    adminVariant:   'Variant',
+    adminSku:       'SKU',
+    adminVendor:    'Vendor',
+    adminPrice:     'Price',
+    adminManage:    'Manage Inventory',
   },
   hi: {
-    subject:       (title, limited) => `🎉 वापस स्टॉक में: ${title}${limited ? ' — सीमित मात्रा!' : ''}`,
-    heading:       '🎉 वापस स्टॉक में!',
-    intro:         (title, shop) => `अच्छी खबर! <strong>${title}</strong> अब <strong>${shop}</strong> पर उपलब्ध है।`,
-    cta:           'अभी खरीदें',
-    footer:        'आपको यह इसलिए मिल रहा है क्योंकि आपने स्टॉक अलर्ट के लिए सदस्यता ली थी।',
-    urgencyOnly:   'केवल', urgencyJust: 'सिर्फ', urgencyLeft: 'बचे हैं!',
-    urgencyHurry:  'जल्दी करें, फिर से बिकने से पहले!',
-    priceDropHead: '💰 मूल्य में गिरावट!',
-    priceDropSave: (pct) => `${pct}% बचाएं - सीमित समय!`,
-    priceDropCta:  'अभी खरीदें और बचाएं',
+    subject:        (title, limited) => `🎉 वापस स्टॉक में: ${title}${limited ? ' — सीमित मात्रा!' : ''}`,
+    heading:        '🎉 वापस स्टॉक में!',
+    intro:          (title, shop) => `अच्छी खबर! <strong>${title}</strong> अब <strong>${shop}</strong> पर उपलब्ध है।`,
+    cta:            'अभी खरीदें',
+    footer:         'आपको यह इसलिए मिल रहा है क्योंकि आपने स्टॉक अलर्ट के लिए सदस्यता ली थी।',
+    urgencyOnly:    'केवल', urgencyJust: 'सिर्फ', urgencyLeft: 'बचे हैं!',
+    urgencyHurry:   'जल्दी करें, फिर से बिकने से पहले!',
+    priceDropHead:  '💰 मूल्य में गिरावट!',
+    priceDropSave:  (pct) => `${pct}% बचाएं - सीमित समय!`,
+    priceDropCta:   'अभी खरीदें और बचाएं',
+    adminSubject:   (title) => `🚨 स्टॉक खत्म: ${title}`,
+    adminHeading:   'इन्वेंटरी अलर्ट',
+    adminProduct:   'उत्पाद',
+    adminVariant:   'वेरिएंट',
+    adminSku:       'SKU',
+    adminVendor:    'विक्रेता',
+    adminPrice:     'कीमत',
+    adminManage:    'इन्वेंटरी प्रबंधित करें',
   },
   fr: {
-    subject:       (title, limited) => `🎉 De retour en stock : ${title}${limited ? ' — Quantité limitée !' : ''}`,
-    heading:       '🎉 De Retour en Stock !',
-    intro:         (title, shop) => `Bonne nouvelle ! <strong>${title}</strong> est maintenant disponible sur <strong>${shop}</strong>.`,
-    cta:           'Acheter Maintenant',
-    footer:        "Vous recevez ceci parce que vous vous êtes abonné aux alertes de réapprovisionnement.",
-    urgencyOnly:   'Seulement', urgencyJust: 'Plus que', urgencyLeft: 'en stock !',
-    urgencyHurry:  'Dépêchez-vous avant la rupture !',
-    priceDropHead: '💰 Alerte Baisse de Prix !',
-    priceDropSave: (pct) => `Économisez ${pct}% - Temps limité !`,
-    priceDropCta:  'Achetez et Économisez',
+    subject:        (title, limited) => `🎉 De retour en stock : ${title}${limited ? ' — Quantité limitée !' : ''}`,
+    heading:        '🎉 De Retour en Stock !',
+    intro:          (title, shop) => `Bonne nouvelle ! <strong>${title}</strong> est maintenant disponible sur <strong>${shop}</strong>.`,
+    cta:            'Acheter Maintenant',
+    footer:         "Vous recevez ceci parce que vous vous êtes abonné aux alertes de réapprovisionnement.",
+    urgencyOnly:    'Seulement', urgencyJust: 'Plus que', urgencyLeft: 'en stock !',
+    urgencyHurry:   'Dépêchez-vous avant la rupture !',
+    priceDropHead:  '💰 Alerte Baisse de Prix !',
+    priceDropSave:  (pct) => `Économisez ${pct}% - Temps limité !`,
+    priceDropCta:   'Achetez et Économisez',
+    adminSubject:   (title) => `🚨 Rupture de Stock : ${title}`,
+    adminHeading:   'Alerte Inventaire',
+    adminProduct:   'Produit',
+    adminVariant:   'Variante',
+    adminSku:       'SKU',
+    adminVendor:    'Fournisseur',
+    adminPrice:     'Prix',
+    adminManage:    "Gérer l'Inventaire",
   },
   de: {
-    subject:       (title, limited) => `🎉 Wieder verfügbar: ${title}${limited ? ' — Begrenzte Menge!' : ''}`,
-    heading:       '🎉 Wieder Verfügbar!',
-    intro:         (title, shop) => `Gute Neuigkeiten! <strong>${title}</strong> ist jetzt bei <strong>${shop}</strong> verfügbar.`,
-    cta:           'Jetzt Kaufen',
-    footer:        "Sie erhalten dies, weil Sie Benachrichtigungen abonniert haben.",
-    urgencyOnly:   'Nur noch', urgencyJust: 'Nur', urgencyLeft: 'auf Lager!',
-    urgencyHurry:  'Beeilen Sie sich, bevor es ausverkauft ist!',
-    priceDropHead: '💰 Preissenkung!',
-    priceDropSave: (pct) => `${pct}% sparen - Begrenzte Zeit!`,
-    priceDropCta:  'Jetzt kaufen & sparen',
+    subject:        (title, limited) => `🎉 Wieder verfügbar: ${title}${limited ? ' — Begrenzte Menge!' : ''}`,
+    heading:        '🎉 Wieder Verfügbar!',
+    intro:          (title, shop) => `Gute Neuigkeiten! <strong>${title}</strong> ist jetzt bei <strong>${shop}</strong> verfügbar.`,
+    cta:            'Jetzt Kaufen',
+    footer:         "Sie erhalten dies, weil Sie Benachrichtigungen abonniert haben.",
+    urgencyOnly:    'Nur noch', urgencyJust: 'Nur', urgencyLeft: 'auf Lager!',
+    urgencyHurry:   'Beeilen Sie sich, bevor es ausverkauft ist!',
+    priceDropHead:  '💰 Preissenkung!',
+    priceDropSave:  (pct) => `${pct}% sparen - Begrenzte Zeit!`,
+    priceDropCta:   'Jetzt kaufen & sparen',
+    adminSubject:   (title) => `🚨 Nicht vorrätig: ${title}`,
+    adminHeading:   'Lagerbestand-Alarm',
+    adminProduct:   'Produkt',
+    adminVariant:   'Variante',
+    adminSku:       'SKU',
+    adminVendor:    'Anbieter',
+    adminPrice:     'Preis',
+    adminManage:    'Lagerbestand verwalten',
   },
   es: {
-    subject:       (title, limited) => `🎉 De vuelta en stock: ${title}${limited ? ' — ¡Cantidad limitada!' : ''}`,
-    heading:       '🎉 ¡De Vuelta en Stock!',
-    intro:         (title, shop) => `¡Buenas noticias! <strong>${title}</strong> ya está disponible en <strong>${shop}</strong>.`,
-    cta:           'Comprar Ahora',
-    footer:        "Recibes esto porque te suscribiste a las alertas de reposición.",
-    urgencyOnly:   'Solo', urgencyJust: 'Solo', urgencyLeft: '¡en stock!',
-    urgencyHurry:  '¡Date prisa antes de que se agote!',
-    priceDropHead: '💰 ¡Alerta de Bajada de Precio!',
-    priceDropSave: (pct) => `¡Ahorra ${pct}% - Tiempo limitado!`,
-    priceDropCta:  'Compra y Ahorra',
+    subject:        (title, limited) => `🎉 De vuelta en stock: ${title}${limited ? ' — ¡Cantidad limitada!' : ''}`,
+    heading:        '🎉 ¡De Vuelta en Stock!',
+    intro:          (title, shop) => `¡Buenas noticias! <strong>${title}</strong> ya está disponible en <strong>${shop}</strong>.`,
+    cta:            'Comprar Ahora',
+    footer:         "Recibes esto porque te suscribiste a las alertas de reposición.",
+    urgencyOnly:    'Solo', urgencyJust: 'Solo', urgencyLeft: '¡en stock!',
+    urgencyHurry:   '¡Date prisa antes de que se agote!',
+    priceDropHead:  '💰 ¡Alerta de Bajada de Precio!',
+    priceDropSave:  (pct) => `¡Ahorra ${pct}% - Tiempo limitado!`,
+    priceDropCta:   'Compra y Ahorra',
+    adminSubject:   (title) => `🚨 Sin Stock: ${title}`,
+    adminHeading:   'Alerta de Inventario',
+    adminProduct:   'Producto',
+    adminVariant:   'Variante',
+    adminSku:       'SKU',
+    adminVendor:    'Proveedor',
+    adminPrice:     'Precio',
+    adminManage:    'Gestionar Inventario',
   },
   ar: {
-    subject:       (title, limited) => `🎉 عاد إلى المخزون: ${title}${limited ? ' — كمية محدودة!' : ''}`,
-    heading:       '🎉 عاد إلى المخزون!',
-    intro:         (title, shop) => `أخبار رائعة! <strong>${title}</strong> متاح الآن في <strong>${shop}</strong>.`,
-    cta:           'اشترِ الآن',
-    footer:        "تلقيت هذا لأنك اشتركت في تنبيهات إعادة التخزين.",
-    urgencyOnly:   'فقط', urgencyJust: 'فقط', urgencyLeft: 'في المخزون!',
-    urgencyHurry:  'أسرع قبل نفاد المخزون!',
-    priceDropHead: '💰 تنبيه انخفاض السعر!',
-    priceDropSave: (pct) => `وفر ${pct}% - لفترة محدودة!`,
-    priceDropCta:  'تسوق الآن ووفّر',
+    subject:        (title, limited) => `🎉 عاد إلى المخزون: ${title}${limited ? ' — كمية محدودة!' : ''}`,
+    heading:        '🎉 عاد إلى المخزون!',
+    intro:          (title, shop) => `أخبار رائعة! <strong>${title}</strong> متاح الآن في <strong>${shop}</strong>.`,
+    cta:            'اشترِ الآن',
+    footer:         "تلقيت هذا لأنك اشتركت في تنبيهات إعادة التخزين.",
+    urgencyOnly:    'فقط', urgencyJust: 'فقط', urgencyLeft: 'في المخزون!',
+    urgencyHurry:   'أسرع قبل نفاد المخزون!',
+    priceDropHead:  '💰 تنبيه انخفاض السعر!',
+    priceDropSave:  (pct) => `وفر ${pct}% - لفترة محدودة!`,
+    priceDropCta:   'تسوق الآن ووفّر',
+    adminSubject:   (title) => `🚨 نفاد المخزون: ${title}`,
+    adminHeading:   'تنبيه المخزون',
+    adminProduct:   'المنتج',
+    adminVariant:   'المتغير',
+    adminSku:       'SKU',
+    adminVendor:    'المورد',
+    adminPrice:     'السعر',
+    adminManage:    'إدارة المخزون',
   },
   zh: {
-    subject:       (title, limited) => `🎉 已补货：${title}${limited ? ' — 数量有限！' : ''}`,
-    heading:       '🎉 已补货！',
-    intro:         (title, shop) => `好消息！<strong>${title}</strong> 现在已在 <strong>${shop}</strong> 上架。`,
-    cta:           '立即购买',
-    footer:        "您收到此邮件是因为您订阅了补货提醒。",
-    urgencyOnly:   '仅剩', urgencyJust: '仅剩', urgencyLeft: '件！',
-    urgencyHurry:  '快抢，售完为止！',
-    priceDropHead: '💰 降价提醒！',
-    priceDropSave: (pct) => `节省 ${pct}% — 限时优惠！`,
-    priceDropCta:  '立即抢购省钱',
+    subject:        (title, limited) => `🎉 已补货：${title}${limited ? ' — 数量有限！' : ''}`,
+    heading:        '🎉 已补货！',
+    intro:          (title, shop) => `好消息！<strong>${title}</strong> 现在已在 <strong>${shop}</strong> 上架。`,
+    cta:            '立即购买',
+    footer:         "您收到此邮件是因为您订阅了补货提醒。",
+    urgencyOnly:    '仅剩', urgencyJust: '仅剩', urgencyLeft: '件！',
+    urgencyHurry:   '快抢，售完为止！',
+    priceDropHead:  '💰 降价提醒！',
+    priceDropSave:  (pct) => `节省 ${pct}% — 限时优惠！`,
+    priceDropCta:   '立即抢购省钱',
+    adminSubject:   (title) => `🚨 缺货：${title}`,
+    adminHeading:   '库存警告',
+    adminProduct:   '产品',
+    adminVariant:   '变体',
+    adminSku:       'SKU',
+    adminVendor:    '供应商',
+    adminPrice:     '价格',
+    adminManage:    '管理库存',
   },
   ja: {
-    subject:       (title, limited) => `🎉 在庫復活：${title}${limited ? ' — 数量限定！' : ''}`,
-    heading:       '🎉 在庫が復活しました！',
-    intro:         (title, shop) => `嬉しいお知らせです！<strong>${title}</strong> が <strong>${shop}</strong> で再入荷しました。`,
-    cta:           '今すぐ購入',
-    footer:        "このメールは在庫復活通知にご登録いただいたためお送りしています。",
-    urgencyOnly:   'あと', urgencyJust: 'あと', urgencyLeft: '点のみ！',
-    urgencyHurry:  'お早めに！売り切れる前に！',
-    priceDropHead: '💰 値下げのお知らせ！',
-    priceDropSave: (pct) => `${pct}% OFF — 期間限定！`,
-    priceDropCta:  '今すぐお得に購入',
-  }
+    subject:        (title, limited) => `🎉 在庫復活：${title}${limited ? ' — 数量限定！' : ''}`,
+    heading:        '🎉 在庫が復活しました！',
+    intro:          (title, shop) => `嬉しいお知らせです！<strong>${title}</strong> が <strong>${shop}</strong> で再入荷しました。`,
+    cta:            '今すぐ購入',
+    footer:         "このメールは在庫復活通知にご登録いただいたためお送りしています。",
+    urgencyOnly:    'あと', urgencyJust: 'あと', urgencyLeft: '点のみ！',
+    urgencyHurry:   'お早めに！売り切れる前に！',
+    priceDropHead:  '💰 値下げのお知らせ！',
+    priceDropSave:  (pct) => `${pct}% OFF — 期間限定！`,
+    priceDropCta:   '今すぐお得に購入',
+    adminSubject:   (title) => `🚨 在庫切れ：${title}`,
+    adminHeading:   '在庫アラート',
+    adminProduct:   '商品',
+    adminVariant:   'バリアント',
+    adminSku:       'SKU',
+    adminVendor:    'ベンダー',
+    adminPrice:     '価格',
+    adminManage:    '在庫を管理',
+  },
 };
 
 function getT(lang) {
-  return EMAIL_TRANSLATIONS[lang] || EMAIL_TRANSLATIONS['en'];
+  return EMAIL_TRANSLATIONS[resolveLang(lang)];
 }
 
 // ─── Email sender ─────────────────────────────────────────────
@@ -127,7 +200,7 @@ async function sendEmail(emailData) {
   }
 }
 
-// ─── getLiveInventory — uses quantities(names:["available"]) ──
+// ─── getLiveInventory ─────────────────────────────────────────
 async function getLiveInventory(admin, inventoryItemId) {
   try {
     const response = await admin.graphql(`
@@ -137,40 +210,27 @@ async function getLiveInventory(admin, inventoryItemId) {
             edges {
               node {
                 quantities(names: ["available"]) {
-                  name
-                  quantity
+                  name quantity
                 }
               }
             }
           }
         }
       }
-    `, {
-      variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` }
-    });
+    `, { variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` } });
 
-    const json = await response.json();
-
-    if (json.errors) {
-      console.error("❌ getLiveInventory GraphQL error:", JSON.stringify(json.errors));
-      return null;
-    }
+    const json   = await response.json();
+    if (json.errors) { console.error("❌ getLiveInventory error:", json.errors); return null; }
 
     const levels = json.data?.inventoryItem?.inventoryLevels?.edges || [];
-    let totalAvailable = 0;
-
+    let total    = 0;
     for (const edge of levels) {
-      const quantities = edge.node?.quantities || [];
-      for (const q of quantities) {
-        if (q.name === 'available') {
-          totalAvailable += q.quantity || 0;
-        }
+      for (const q of (edge.node?.quantities || [])) {
+        if (q.name === 'available') total += q.quantity || 0;
       }
     }
-
-    console.log(`📦 Live inventory total available: ${totalAvailable}`);
-    return totalAvailable;
-
+    console.log(`📦 Live inventory: ${total}`);
+    return total;
   } catch (err) {
     console.error("❌ getLiveInventory error:", err.message);
     return null;
@@ -202,7 +262,7 @@ function getPriceDropBadge(oldPrice, newPrice, currency, pct, t) {
     </div>`;
 }
 
-// ─── Build back-in-stock email ────────────────────────────────
+// ─── Back in stock email HTML ─────────────────────────────────
 function buildBackInStockHtml({ productTitle, displayName, productImg, currency, price, clickUrl, openUrl, countdownBadge, shopName, includePrice, t }) {
   return `
     <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
@@ -229,7 +289,7 @@ function buildBackInStockHtml({ productTitle, displayName, productImg, currency,
     </div>`;
 }
 
-// ─── Build price drop email ───────────────────────────────────
+// ─── Price drop email HTML ────────────────────────────────────
 function buildPriceDropHtml({ productTitle, displayName, productImg, clickUrl, openUrl, priceDropBadge, shopName, t }) {
   return `
     <div style="background-color:#f3f4f6;padding:40px 0;font-family:sans-serif;">
@@ -260,9 +320,7 @@ export async function action({ request }) {
   try {
     const { payload, shop, admin } = await authenticate.webhook(request);
 
-    // ✅ FIX: Always cast to String for consistent DB matching
     const inventoryItemId = String(payload.inventory_item_id);
-
     console.log("📦 Inventory Webhook:", { inventoryItemId, available: payload.available, shop });
 
     const available = payload.available !== undefined
@@ -276,6 +334,7 @@ export async function action({ request }) {
 
     const settings = await prisma.appSettings.findUnique({ where: { shop } }) ?? {
       adminEmail:         process.env.ADMIN_EMAIL || 'admin@example.com',
+      adminLanguage:      'en',
       subjectLine:        'Out of stock products reminder',
       includeSku:         true,
       includeVendor:      true,
@@ -301,7 +360,6 @@ export async function action({ request }) {
     `, { variables: { id: `gid://shopify/InventoryItem/${inventoryItemId}` } });
 
     const gqlJson = await gqlResponse.json();
-
     if (gqlJson.errors) {
       console.error("❌ GraphQL Errors:", JSON.stringify(gqlJson.errors));
       return new Response("GraphQL Error", { status: 200 });
@@ -309,7 +367,6 @@ export async function action({ request }) {
 
     const inv     = gqlJson.data?.inventoryItem;
     const variant = inv?.variant;
-
     if (!variant) {
       console.log("⚠️ Variant not found:", inventoryItemId);
       return new Response("Variant not found", { status: 200 });
@@ -325,7 +382,6 @@ export async function action({ request }) {
 
     console.log(`✅ Product: ${variant.product.title} | variantId: ${variantIdClean} | available: ${available}`);
 
-    // ✅ FIX: Robust subscriberWhere — match by inventoryItemId OR variantId, both as strings
     const subscriberWhere = {
       shop,
       OR: [
@@ -334,7 +390,7 @@ export async function action({ request }) {
       ]
     };
 
-    // ── CASE 1: BACK IN STOCK ──────────────────────────────────
+    // ── CASE 1: BACK IN STOCK ─────────────────────────────────
     if (available > 0) {
       console.log(`🟢 Product restocked (qty: ${available})`);
 
@@ -343,35 +399,23 @@ export async function action({ request }) {
 
       console.log(`👥 Total: ${allSubscribers.length} | Pending: ${pending.length}`);
 
-      // ─── DEBUG: Log all subscribers with language ────────────
-      console.log("🔍 ALL SUBSCRIBER DETAILS:");
       allSubscribers.forEach(s => {
-        console.log(`   → id=${s.id} | email=${s.email} | language="${s.language}" | notified=${s.notified} | variantId=${s.variantId} | inventoryItemId=${s.inventoryItemId}`);
+        console.log(`   → id=${s.id} | email=${s.email} | language="${s.language}" | notified=${s.notified}`);
       });
-      // ────────────────────────────────────────────────────────
 
-      // getLiveInventory
       const liveStock    = await getLiveInventory(admin, inventoryItemId);
       const stockDisplay = liveStock !== null ? liveStock : available;
 
-      console.log(`📊 Stock for countdown badge: ${stockDisplay}`);
-
-      // Send back-in-stock emails to pending subscribers
+      // Back in stock emails — subscriber ki language mein
       for (const sub of pending) {
+        const lang = resolveLang(sub.language);
+        const t    = getT(lang);
 
-        // ✅ FIX: Robust language resolution — trim + lowercase + validate
-        const SUPPORTED_LANGS = ['en', 'hi', 'fr', 'de', 'es', 'ar', 'zh', 'ja'];
-        const rawLang  = typeof sub.language === 'string' ? sub.language.trim().toLowerCase() : '';
-        const lang     = SUPPORTED_LANGS.includes(rawLang) ? rawLang : 'en';
+        console.log(`🌐 [${lang.toUpperCase()}] Back-in-stock email → ${sub.email}`);
 
-        console.log(`🌐 Subscriber id=${sub.id} | DB language="${sub.language}" | resolved lang="${lang}"`);
-
-        const t        = getT(lang);
-        const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
-        const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
+        const openUrl   = `${APP_URL}api/track-open?id=${sub.id}`;
+        const clickUrl  = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
         const countdown = getCountdownBadge(stockDisplay, t, settings.countdownThreshold || 200);
-
-        console.log(`📧 Sending [${lang.toUpperCase()}] back-in-stock email to ${sub.email}`);
 
         const html = buildBackInStockHtml({
           productTitle:   variant.product.title,
@@ -395,12 +439,11 @@ export async function action({ request }) {
         });
 
         if (sent) {
-          console.log(`✅ [${lang.toUpperCase()}] Email sent → ${sub.email}`);
+          console.log(`✅ [${lang.toUpperCase()}] Sent → ${sub.email}`);
           await prisma.backInStock.update({
             where: { id: sub.id },
             data:  {
               notified:        true,
-              // ✅ FIX: Also persist resolved language back to DB to keep it clean
               language:        lang,
               subscribedPrice: sub.subscribedPrice ?? currentPrice
             }
@@ -410,30 +453,28 @@ export async function action({ request }) {
         }
       }
 
-      // Price drop check for already-notified subscribers
+      // Price drop emails — already notified subscribers ke liye
       const notified = allSubscribers.filter(s => s.notified);
       for (const sub of notified) {
         if (!sub.subscribedPrice || currentPrice >= sub.subscribedPrice) continue;
         const pctOff = Math.round(((sub.subscribedPrice - currentPrice) / sub.subscribedPrice) * 100);
         if (pctOff < 5) continue;
 
-        // ✅ FIX: Same robust language resolution for price drop emails
-        const SUPPORTED_LANGS = ['en', 'hi', 'fr', 'de', 'es', 'ar', 'zh', 'ja'];
-        const rawLang  = typeof sub.language === 'string' ? sub.language.trim().toLowerCase() : '';
-        const lang     = SUPPORTED_LANGS.includes(rawLang) ? rawLang : 'en';
+        // ✅ Subscriber ki language use karo
+        const lang = resolveLang(sub.language);
+        const t    = getT(lang);
 
-        const t        = getT(lang);
+        console.log(`💰 [${lang.toUpperCase()}] Price drop ${pctOff}% → ${sub.email}`);
+
         const openUrl  = `${APP_URL}api/track-open?id=${sub.id}`;
         const clickUrl = `${APP_URL}api/track-click?id=${sub.id}&target=${encodeURIComponent(productUrl)}`;
         const badge    = getPriceDropBadge(
           sub.subscribedPrice.toFixed(2), currentPrice.toFixed(2), currency, pctOff, t
         );
 
-        console.log(`💰 [${lang.toUpperCase()}] Price drop ${pctOff}% → ${sub.email}`);
-
         const html = buildPriceDropHtml({
-          productTitle: variant.product.title,
-          displayName:  variant.displayName,
+          productTitle:   variant.product.title,
+          displayName:    variant.displayName,
           productImg, clickUrl, openUrl,
           priceDropBadge: badge,
           shopName, t
@@ -456,48 +497,47 @@ export async function action({ request }) {
       }
     }
 
-    // ── CASE 2: OUT OF STOCK ───────────────────────────────────
-  // ── CASE 2: OUT OF STOCK ─────────────────────────────────────
-else {
-  console.log("🔴 Product went out of stock");
+    // ── CASE 2: OUT OF STOCK ──────────────────────────────────
+    else {
+      console.log("🔴 Product went out of stock");
 
-  const reset = await prisma.backInStock.updateMany({
-    where: subscriberWhere,
-    data:  { notified: false }
-  });
-  console.log(`🔄 Reset notified=false for ${reset.count} subscribers`);
+      const reset = await prisma.backInStock.updateMany({
+        where: subscriberWhere,
+        data:  { notified: false }
+      });
+      console.log(`🔄 Reset notified=false for ${reset.count} subscribers`);
 
-  // ✅ Admin ki chosen language mein alert bhejo
-  const adminLang = resolveLang(settings.adminLanguage);
-  const tAdmin    = getT(adminLang);
+      // ✅ Admin ki chosen language mein alert
+      const adminLang = resolveLang(settings.adminLanguage);
+      const tAdmin    = getT(adminLang);
 
-  console.log(`📧 Admin alert [${adminLang.toUpperCase()}] → ${settings.adminEmail}`);
+      console.log(`📧 Admin alert [${adminLang.toUpperCase()}] → ${settings.adminEmail}`);
 
-  const adminHtml = `
-    <div style="font-family:sans-serif;padding:30px;background:#fffafb;border:1px solid #fee2e2;border-radius:16px;max-width:500px;margin:20px auto;">
-      <h2 style="color:#991b1b;">🚨 ${tAdmin.adminHeading}</h2>
-      <div style="background:#fff;border-radius:12px;padding:20px;border:1px solid #fecaca;margin-top:15px;">
-        <p><strong>${tAdmin.adminProduct}:</strong> ${variant.product.title}</p>
-        <p><strong>${tAdmin.adminVariant}:</strong> ${variant.displayName}</p>
-        ${settings.includeSku    ? `<p><strong>${tAdmin.adminSku}:</strong> ${inv.sku || 'N/A'}</p>` : ''}
-        ${settings.includeVendor ? `<p><strong>${tAdmin.adminVendor}:</strong> ${variant.product.vendor || 'N/A'}</p>` : ''}
-        ${settings.includePrice  ? `<p><strong>${tAdmin.adminPrice}:</strong> ${currency} ${variant.price}</p>` : ''}
-      </div>
-      <div style="margin-top:25px;text-align:center;">
-        <a href="https://${shop}/admin/products" style="background:#111827;color:#fff;padding:12px 25px;border-radius:10px;text-decoration:none;font-weight:bold;">
-          ${tAdmin.adminManage}
-        </a>
-      </div>
-    </div>`;
+      const adminHtml = `
+        <div style="font-family:sans-serif;padding:30px;background:#fffafb;border:1px solid #fee2e2;border-radius:16px;max-width:500px;margin:20px auto;">
+          <h2 style="color:#991b1b;">🚨 ${tAdmin.adminHeading}</h2>
+          <div style="background:#fff;border-radius:12px;padding:20px;border:1px solid #fecaca;margin-top:15px;">
+            <p><strong>${tAdmin.adminProduct}:</strong> ${variant.product.title}</p>
+            <p><strong>${tAdmin.adminVariant}:</strong> ${variant.displayName}</p>
+            ${settings.includeSku    ? `<p><strong>${tAdmin.adminSku}:</strong> ${inv.sku || 'N/A'}</p>` : ''}
+            ${settings.includeVendor ? `<p><strong>${tAdmin.adminVendor}:</strong> ${variant.product.vendor || 'N/A'}</p>` : ''}
+            ${settings.includePrice  ? `<p><strong>${tAdmin.adminPrice}:</strong> ${currency} ${variant.price}</p>` : ''}
+          </div>
+          <div style="margin-top:25px;text-align:center;">
+            <a href="https://${shop}/admin/products" style="background:#111827;color:#fff;padding:12px 25px;border-radius:10px;text-decoration:none;font-weight:bold;">
+              ${tAdmin.adminManage}
+            </a>
+          </div>
+        </div>`;
 
-  const sent = await sendEmail({
-    from:    'Inventory Manager <onboarding@resend.dev>',
-    to:      settings.adminEmail,
-    subject: tAdmin.adminSubject(variant.product.title),
-    html:    adminHtml
-  });
-  console.log(sent ? "✅ Admin alert sent" : "❌ Admin alert failed");
-}
+      const sent = await sendEmail({
+        from:    'Inventory Manager <onboarding@resend.dev>',
+        to:      settings.adminEmail,
+        subject: tAdmin.adminSubject(variant.product.title),
+        html:    adminHtml
+      });
+      console.log(sent ? "✅ Admin alert sent" : "❌ Admin alert failed");
+    }
 
     console.log("✅ Webhook processed successfully");
     return new Response("OK", { status: 200 });
