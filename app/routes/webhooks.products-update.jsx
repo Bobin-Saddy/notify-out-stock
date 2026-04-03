@@ -250,7 +250,7 @@ export async function action({ request }) {
 
             console.log(`🌐 [${lang.toUpperCase()}] DB language="${sub.language}" → Price drop email → ${sub.email}`);
 
-            // Variant details cache karo
+            // Variant details cache karos
             if (!variantDetails) {
               variantDetails = await fetchVariantDetails(admin, variantId);
             }
