@@ -457,42 +457,47 @@ export async function action({ request }) {
     }
 
     // ── CASE 2: OUT OF STOCK ───────────────────────────────────
-    else {
-      console.log("🔴 Product went out of stock");
+  // ── CASE 2: OUT OF STOCK ─────────────────────────────────────
+else {
+  console.log("🔴 Product went out of stock");
 
-      const reset = await prisma.backInStock.updateMany({
-        where: subscriberWhere,
-        data:  { notified: false }
-      });
-      console.log(`🔄 Reset notified=false for ${reset.count} subscribers`);
+  const reset = await prisma.backInStock.updateMany({
+    where: subscriberWhere,
+    data:  { notified: false }
+  });
+  console.log(`🔄 Reset notified=false for ${reset.count} subscribers`);
 
-      // Admin alert
-      const adminHtml = `
-        <div style="font-family:sans-serif;padding:30px;background:#fffafb;border:1px solid #fee2e2;border-radius:16px;max-width:500px;margin:20px auto;">
-          <h2 style="color:#991b1b;">🚨 ${settings.subjectLine || 'Inventory Alert'}</h2>
-          <div style="background:#fff;border-radius:12px;padding:20px;border:1px solid #fecaca;margin-top:15px;">
-            <p><strong>Product:</strong> ${variant.product.title}</p>
-            <p><strong>Variant:</strong> ${variant.displayName}</p>
-            ${settings.includeSku    ? `<p><strong>SKU:</strong> ${inv.sku || 'N/A'}</p>` : ''}
-            ${settings.includeVendor ? `<p><strong>Vendor:</strong> ${variant.product.vendor || 'N/A'}</p>` : ''}
-            ${settings.includePrice  ? `<p><strong>Price:</strong> ${currency} ${variant.price}</p>` : ''}
-          </div>
-          <div style="margin-top:25px;text-align:center;">
-            <a href="https://${shop}/admin/products" style="background:#111827;color:#fff;padding:12px 25px;border-radius:10px;text-decoration:none;font-weight:bold;">Manage Inventory</a>
-          </div>
-        </div>`;
+  // ✅ Admin ki chosen language mein alert bhejo
+  const adminLang = resolveLang(settings.adminLanguage);
+  const tAdmin    = getT(adminLang);
 
-const adminLang = settings.adminLanguage || 'en';
-const tAdmin = getT(adminLang);
+  console.log(`📧 Admin alert [${adminLang.toUpperCase()}] → ${settings.adminEmail}`);
 
-const sent = await sendEmail({
-  from:    'Inventory Manager <onboarding@resend.dev>',
-  to:      settings.adminEmail,
-  subject: `🚨 ${tAdmin.urgencyHurry ? 'Stock Out' : 'Stock Out'}: ${variant.product.title}`,
-  html:    adminHtml
-});
-      console.log(sent ? "✅ Admin alert sent" : "❌ Admin alert failed");
-    }
+  const adminHtml = `
+    <div style="font-family:sans-serif;padding:30px;background:#fffafb;border:1px solid #fee2e2;border-radius:16px;max-width:500px;margin:20px auto;">
+      <h2 style="color:#991b1b;">🚨 ${tAdmin.adminHeading}</h2>
+      <div style="background:#fff;border-radius:12px;padding:20px;border:1px solid #fecaca;margin-top:15px;">
+        <p><strong>${tAdmin.adminProduct}:</strong> ${variant.product.title}</p>
+        <p><strong>${tAdmin.adminVariant}:</strong> ${variant.displayName}</p>
+        ${settings.includeSku    ? `<p><strong>${tAdmin.adminSku}:</strong> ${inv.sku || 'N/A'}</p>` : ''}
+        ${settings.includeVendor ? `<p><strong>${tAdmin.adminVendor}:</strong> ${variant.product.vendor || 'N/A'}</p>` : ''}
+        ${settings.includePrice  ? `<p><strong>${tAdmin.adminPrice}:</strong> ${currency} ${variant.price}</p>` : ''}
+      </div>
+      <div style="margin-top:25px;text-align:center;">
+        <a href="https://${shop}/admin/products" style="background:#111827;color:#fff;padding:12px 25px;border-radius:10px;text-decoration:none;font-weight:bold;">
+          ${tAdmin.adminManage}
+        </a>
+      </div>
+    </div>`;
+
+  const sent = await sendEmail({
+    from:    'Inventory Manager <onboarding@resend.dev>',
+    to:      settings.adminEmail,
+    subject: tAdmin.adminSubject(variant.product.title),
+    html:    adminHtml
+  });
+  console.log(sent ? "✅ Admin alert sent" : "❌ Admin alert failed");
+}
 
     console.log("✅ Webhook processed successfully");
     return new Response("OK", { status: 200 });
