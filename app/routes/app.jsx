@@ -19,7 +19,7 @@ export default function App() {
     <ShopifyAppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={{}}>
         <s-app-nav>
-          <s-link href="/app/out-of-stock">Out of Stock </s-link>
+          <s-link href="/app/out-of-stock">Out of Stock settings</s-link>
           <s-link href="/app/back-in-stock">Back in Stock</s-link>
           <s-link href="/app/subscribers">Subscribers</s-link>
           <s-link href="/app/wishlist">Wishlist</s-link>
