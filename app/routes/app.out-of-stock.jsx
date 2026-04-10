@@ -103,18 +103,7 @@ export default function SettingsPage() {
           <SideIcon><ClockIcon /></SideIcon>
           <SideIcon><MailIcon /></SideIcon>
           <div style={s.sSep} />
-          <SideIcon active>
-            <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="#6c5ce7" strokeWidth="1.7">
-              <circle cx="8" cy="8" r="2.5"/>
-              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M11.5 3.1l-1.4 1.4M4.5 11.5l-1.4 1.4"/>
-            </svg>
-          </SideIcon>
-          <SideIcon>
-            <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="#bbb" strokeWidth="1.7">
-              <circle cx="6" cy="5" r="3"/>
-              <path d="M1 14c0-3 2-5 5-5m4 4l2 2 3-4"/>
-            </svg>
-          </SideIcon>
+        
         </aside>
 
         {/* ── Body ── */}
