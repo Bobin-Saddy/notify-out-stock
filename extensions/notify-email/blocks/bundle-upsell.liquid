@@ -1,0 +1,986 @@
+{% comment %}
+  Dynamic Product Bundle Section - Fully Customizable Theme Colors
+  Metafield: custom.bundle_items
+  - Out-of-stock products hidden (card + connector skipped)
+  - Card click toggles selection
+  - Quantity slider on each card (1–100)
+  - Summary bar: collapsible product list (arrow toggle) + total + CTA
+  - Header shows stacked thumbnails of selected products
+  - Responsive: desktop flex-scroll | tablet shrink | mobile 2-col grid
+  - ALL colors controllable via Shopify Theme Editor schema settings
+  - App liquid file working with section schema not use block schema because section settings are needed for colors and text, and block schema doesn't support color pickers or rich text fields. This means the section can only be used once per page, but that's a reasonable tradeoff for the level of customization it offers.
+{% endcomment %}
+
+<section class="bd-section" style="
+  --bg:        {{ block.settings.color_bg }};
+  --card:      {{ block.settings.color_card }};
+  --card-on:   {{ block.settings.color_card_selected }};
+  --border:    {{ block.settings.color_border }};
+  --border-hi: {{ block.settings.color_border_highlight }};
+  --accent:    {{ block.settings.color_accent }};
+  --accent2:   {{ block.settings.color_accent_dark }};
+  --text:      {{ block.settings.color_text }};
+  --muted:     {{ block.settings.color_muted }};
+  --faint:     {{ block.settings.color_faint }};
+  --green:     {{ block.settings.color_success }};
+  --red:       {{ block.settings.color_error }};
+  --t:         0.2s ease;
+  --r:         {{ block.settings.border_radius }}px;
+  --font:      -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+">
+  <div class="bd-wrap">
+
+    <div class="bd-header">
+      <div class="bd-pill">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        {{ block.settings.pill_label }}
+      </div>
+      <h2 class="bd-title">{{ block.settings.heading }}</h2>
+      <p class="bd-subtitle">{{ block.settings.subheading }}</p>
+    </div>
+
+    {% if product.metafields.custom.bundle_items.value %}
+      {% assign bundle_products = product.metafields.custom.bundle_items.value %}
+
+      <div class="bd-arrows">
+        <button class="bd-arrow bd-arrow--left" id="bd-left">&#8592;</button>
+        <button class="bd-arrow bd-arrow--right" id="bd-right">&#8594;</button>
+      </div>
+
+      <div class="bd-strip">
+
+        <!-- Main Product Card -->
+        <div class="bd-card bd-card--main is-on" data-card
+          data-price="{{ product.price }}"
+          data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+          data-img="{{ product.featured_image | image_url: width: 200 }}"
+          data-name="{{ product.title | escape }}">
+
+          <div class="bd-card__check">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <span class="bd-tag">{{ block.settings.main_product_badge }}</span>
+
+          <div class="bd-card__img-wrap">
+            <img id="bd-main-img"
+              src="{{ product.featured_image | image_url: width: 500 }}"
+              alt="{{ product.title | escape }}"
+              class="bd-card__img" loading="lazy" />
+          </div>
+          <div class="bd-card__body">
+            <p class="bd-card__name">{{ product.title }}</p>
+            <p class="bd-card__variant" id="bd-main-variant">{{ product.selected_or_first_available_variant.title }}</p>
+            <p class="bd-card__price" id="bd-main-price">{{ product.price | money }}</p>
+
+            <div class="bd-qty-wrap" onclick="event.stopPropagation()">
+              <div class="bd-qty-header">
+                <span class="bd-qty-label">{{ block.settings.qty_label }}</span>
+                <span class="bd-qty-val">1</span>
+              </div>
+              <input type="range" class="bd-slider" min="1" max="100" value="1" step="1" data-card-slider />
+              <div class="bd-slider-ticks">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bundle Product Cards -->
+        {% for item in bundle_products %}
+          {% assign bp = item %}
+          {% if bp %}
+            {% if bp.first_available_variant == nil %}{% continue %}{% endif %}
+
+            <div class="bd-connector" aria-hidden="true">
+              <div class="bd-connector__node">+</div>
+            </div>
+
+            <div class="bd-card is-on" data-card
+              data-price="{{ bp.price }}"
+              data-variant-id="{{ bp.first_available_variant.id }}"
+              data-img="{{ bp.featured_image | image_url: width: 200 }}"
+              data-name="{{ bp.title | escape }}">
+
+              <div class="bd-card__check">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+
+              <div class="bd-card__img-wrap">
+                <img src="{{ bp.featured_image | image_url: width: 500 }}"
+                  alt="{{ bp.title | escape }}"
+                  class="bd-card__img" loading="lazy" />
+              </div>
+              <div class="bd-card__body">
+                <p class="bd-card__name">{{ bp.title }}</p>
+                {% if bp.variants.size > 1 %}
+                  <select class="bd-select" data-card-select>
+                    {% for variant in bp.variants %}
+                      {% if variant.available %}
+                        <option value="{{ variant.id }}" data-price="{{ variant.price }}"
+                          {% if variant.id == bp.first_available_variant.id %}selected{% endif %}>
+                          {{ variant.title }}
+                        </option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  <p class="bd-card__variant">{{ bp.first_available_variant.title }}</p>
+                {% endif %}
+                <p class="bd-card__price">{{ bp.price | money }}</p>
+
+                <div class="bd-qty-wrap" onclick="event.stopPropagation()">
+                  <div class="bd-qty-header">
+                    <span class="bd-qty-label">{{ block.settings.qty_label }}</span>
+                    <span class="bd-qty-val">1</span>
+                  </div>
+                  <input type="range" class="bd-slider" min="1" max="100" value="1" step="1" data-card-slider />
+                  <div class="bd-slider-ticks">
+                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          {% endif %}
+        {% endfor %}
+
+      </div>
+
+      <!-- Summary Bar -->
+      <div class="bd-bar">
+
+        <div class="bd-bar__products">
+          <div class="bd-products-header" id="bd-products-header" onclick="bdToggleList()">
+            <div class="bd-products-header-left">
+              <div class="bd-products-header-imgs" id="bd-header-imgs"></div>
+              <div>
+                <div class="bd-products-header-text">
+                  <span id="bd-count">0</span> {{ block.settings.items_selected_label }}
+                </div>
+                <div class="bd-products-header-sub" id="bd-collapse-sub">{{ block.settings.tap_to_view_label }}</div>
+              </div>
+            </div>
+            <div class="bd-collapse-arrow" id="bd-collapse-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </div>
+          </div>
+
+          <div class="bd-products-list" id="bd-products-list"></div>
+        </div>
+
+        <div class="bd-bar__right">
+          <div class="bd-bar__totals">
+            <span class="bd-bar__label">{{ block.settings.total_label }}</span>
+            <span class="bd-bar__price" id="bd-total">{{ product.price | money }}</span>
+          </div>
+          <button id="bd-btn" class="bd-btn" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.72a2 2 0 001.98-1.71l1.62-9.29H6"/></svg>
+            <span id="bd-btn-text">{{ block.settings.cta_label }}</span>
+          </button>
+        </div>
+
+      </div>
+
+      <p id="bd-msg" class="bd-msg" style="display:none"></p>
+
+    {% else %}
+      <p class="bd-empty">{{ block.settings.empty_label }}</p>
+    {% endif %}
+
+  </div>
+</section>
+
+<style>
+/* ══════════════════════════════════════
+   BASE — all colors come from inline CSS vars set by schema above
+══════════════════════════════════════ */
+.bd-section {
+  background: var(--bg);
+  border: 1px solid #e0ddd6;
+  border-radius: 22px;
+  padding: 40px 28px 36px;
+  margin: 40px auto;
+  max-width: 980px;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font);
+  box-sizing: border-box;
+  color: var(--text);
+}
+.bd-wrap { position: relative; z-index: 1; }
+
+/* ══ ARROWS ══ */
+.bd-arrows { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.bd-arrow {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--text);
+  cursor: pointer; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s ease;
+}
+.bd-arrow:hover { background: var(--faint); }
+.bd-arrow:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ══ HEADER ══ */
+.bd-header { text-align: center; margin-bottom: 28px; }
+.bd-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  color: #fff; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1.3px;
+  padding: 4px 12px; border-radius: 100px; margin-bottom: 10px;
+}
+.bd-title {
+  font-size: clamp(1.15rem, 3.5vw, 1.65rem);
+  font-weight: 700; color: var(--text);
+  margin: 0 0 6px; letter-spacing: -0.02em; line-height: 1.2;
+}
+.bd-subtitle { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* ══ STRIP ══ */
+.bd-strip {
+  display: flex; flex-wrap: nowrap; align-items: stretch;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; gap: 0; padding-bottom: 4px;
+}
+.bd-strip::-webkit-scrollbar { display: none; }
+
+/* ══ CONNECTOR ══ */
+.bd-connector {
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 36px; align-self: center;
+}
+.bd-connector__node {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--card); border: 1.5px solid var(--border-hi);
+  color: var(--accent); font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+/* ══ CARD ══ */
+.bd-card {
+  background: var(--card); border: 1.5px solid var(--border);
+  border-radius: var(--r); min-width: 148px; width: 178px;
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  position: relative; overflow: hidden; cursor: pointer;
+  user-select: none; -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--t), box-shadow var(--t), opacity var(--t);
+  box-sizing: border-box;
+}
+@media (hover: hover) {
+  .bd-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+}
+.bd-card.is-on {
+  background: var(--card-on);
+  border-color: var(--border-hi);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.1);
+}
+.bd-card.is-off { opacity: 0.45; }
+.bd-card--main { background: var(--card); }
+.bd-card--main.is-on { background: var(--card-on); }
+
+/* Check */
+.bd-card__check {
+  position: absolute; top: 8px; right: 8px; z-index: 4;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid var(--border); background: var(--card);
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--t); flex-shrink: 0;
+}
+.bd-card__check svg { width: 10px; height: 10px; stroke: #fff; opacity: 0; transition: opacity var(--t); }
+.bd-card.is-on .bd-card__check { background: var(--accent); border-color: var(--accent); }
+.bd-card.is-on .bd-card__check svg { opacity: 1; }
+
+/* Badge */
+.bd-tag {
+  position: absolute; top: 8px; left: 8px; z-index: 4;
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  background: var(--accent); color: #fff; padding: 2px 7px; border-radius: 100px;
+}
+
+/* Image */
+.bd-card__img-wrap { width: 100%; aspect-ratio: 1/1; overflow: hidden; background: var(--faint); flex-shrink: 0; }
+.bd-card__img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.35s ease; }
+.bd-card.is-on:hover .bd-card__img { transform: scale(1.04); }
+
+/* Body */
+.bd-card__body {
+  padding: 9px 11px 11px; display: flex; flex-direction: column;
+  gap: 3px; border-top: 1px solid var(--border); flex: 1;
+}
+.bd-card__name {
+  font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; margin: 0;
+}
+.bd-card__variant { font-size: 11px; color: var(--muted); margin: 0; }
+.bd-card__price { font-size: 13px; font-weight: 700; color: var(--accent); margin: 1px 0 0; }
+
+.bd-select {
+  width: 100%; padding: 4px 6px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--card);
+  color: var(--text); font-size: 11px; font-family: var(--font);
+  cursor: pointer; box-sizing: border-box;
+}
+.bd-select:focus { outline: none; border-color: var(--accent); }
+
+/* ══ QUANTITY SLIDER ══ */
+.bd-qty-wrap { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); cursor: default; }
+.bd-qty-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.bd-qty-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.bd-qty-val {
+  font-size: 12px; font-weight: 700; color: var(--accent);
+  background: rgba(0,0,0,0.06); border-radius: 5px;
+  padding: 1px 7px; min-width: 22px; text-align: center; transition: background var(--t);
+}
+.bd-card.is-off .bd-qty-val { color: var(--muted); background: var(--faint); }
+
+.bd-slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px; border-radius: 100px;
+  outline: none; cursor: pointer; margin: 0; padding: 0;
+  box-sizing: border-box; transition: opacity var(--t); display: block;
+}
+.bd-card.is-off .bd-slider { background: var(--border) !important; cursor: not-allowed; opacity: 0.5; }
+.bd-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2); cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.bd-slider::-webkit-slider-thumb:hover { transform: scale(1.2); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+.bd-slider::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2); cursor: pointer;
+}
+.bd-slider::-moz-range-track { height: 4px; border-radius: 100px; background: var(--border); }
+.bd-slider::-moz-range-progress { height: 4px; border-radius: 100px; background: var(--accent); }
+.bd-slider-ticks { display: flex; justify-content: space-between; margin-top: 3px; padding: 0 1px; }
+.bd-slider-ticks span { font-size: 9px; color: var(--muted); font-weight: 500; opacity: 0.7; }
+
+/* ══ SUMMARY BAR ══ */
+.bd-bar {
+  display: flex; align-items: stretch; background: var(--card);
+  border: 1px solid var(--border-hi); border-radius: 14px;
+  margin-top: 18px; overflow: hidden; box-sizing: border-box;
+  opacity: 0.9;
+}
+.bd-bar__products {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  border-right: 1px solid var(--border); overflow: hidden;
+}
+.bd-products-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; cursor: pointer; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background var(--t), border-color var(--t); flex-shrink: 0;
+}
+.bd-products-header:hover { background: var(--faint); }
+.bd-products-header.is-open { border-bottom-color: var(--border); }
+.bd-products-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bd-products-header-imgs { display: flex; flex-shrink: 0; }
+.bd-products-header-imgs img {
+  width: 28px; height: 28px; border-radius: 6px; object-fit: cover;
+  border: 2px solid var(--card); margin-left: -7px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12); transition: opacity var(--t);
+}
+.bd-products-header-imgs img:first-child { margin-left: 0; }
+.bd-products-header-text { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.bd-products-header-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.bd-collapse-arrow {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0,0,0,0.06); display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; margin-left: 8px;
+  transition: background var(--t), transform var(--t);
+}
+.bd-collapse-arrow svg { width: 11px; height: 11px; stroke: var(--accent); transition: transform 0.25s ease; }
+.bd-collapse-arrow.is-open svg { transform: rotate(180deg); }
+.bd-products-header:hover .bd-collapse-arrow { background: rgba(0,0,0,0.1); }
+.bd-products-list { overflow: hidden; max-height: 0; transition: max-height 0.32s cubic-bezier(0.4,0,0.2,1); }
+.bd-products-list.is-open { max-height: 600px; }
+
+/* Bar item rows */
+.bd-bar__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  transition: opacity var(--t), background var(--t); cursor: pointer;
+}
+.bd-bar__item:last-child { border-bottom: none; }
+.bd-bar__item:hover { background: var(--faint); }
+.bd-bar__item.is-off { opacity: 0.35; }
+.bd-bar__item-img {
+  width: 40px; height: 40px; border-radius: 8px; object-fit: cover;
+  flex-shrink: 0; border: 1px solid var(--border); background: var(--faint);
+  transition: filter var(--t);
+}
+.bd-bar__item.is-off .bd-bar__item-img { filter: grayscale(1); }
+.bd-bar__item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bd-bar__item-name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-bar__item-price { font-size: 11px; font-weight: 700; color: var(--accent); }
+.bd-bar__item-qty   { font-size: 10px; color: var(--muted); font-weight: 500; }
+.bd-bar__item-status {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; transition: all var(--t);
+}
+.bd-bar__item.is-on .bd-bar__item-status { background: rgba(0,0,0,0.06); color: var(--accent); }
+.bd-bar__item.is-off .bd-bar__item-status { background: var(--faint); color: var(--muted); }
+
+/* Right panel */
+.bd-bar__right {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; padding: 18px;
+  min-width: 185px; flex-shrink: 0;
+}
+.bd-bar__totals { display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
+.bd-bar__label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+.bd-bar__price { font-size: 1.45rem; font-weight: 700; color: var(--text); letter-spacing: -0.03em; line-height: 1; }
+
+/* CTA Button */
+.bd-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 11px 16px; border-radius: 10px; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: #fff; font-family: var(--font);
+  background: linear-gradient(135deg, var(--accent2) 0%, var(--accent) 100%);
+  transition: transform var(--t), box-shadow var(--t);
+  white-space: nowrap; box-sizing: border-box;
+}
+.bd-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,0.2); }
+.bd-btn:active:not(:disabled) { transform: translateY(0); }
+.bd-btn:disabled { background: var(--border); color: var(--muted); box-shadow: none; cursor: not-allowed; }
+
+/* Messages */
+.bd-msg { margin-top: 10px; padding: 9px 14px; border-radius: 9px; font-size: 12px; font-weight: 600; text-align: center; }
+.bd-msg.ok  { color: var(--green); background: #ecfdf5; border: 1px solid rgba(5,150,105,0.2); }
+.bd-msg.err { color: var(--red);   background: #fef2f2; border: 1px solid rgba(220,38,38,0.2); }
+.bd-empty   { text-align: center; color: var(--muted); font-size: 13px; padding: 32px 0; }
+
+/* ══════════════════════════════════════
+   RESPONSIVE
+══════════════════════════════════════ */
+@media (max-width: 768px) {
+  .bd-section { padding: 32px 20px 28px; border-radius: 18px; }
+  .bd-bar__right { min-width: 160px; padding: 15px; }
+}
+@media (max-width: 600px) {
+  .bd-section { padding: 28px 16px 24px; border-radius: 16px; }
+  .bd-bar { flex-direction: column; border-radius: 12px; }
+  .bd-bar__products { border-right: none; border-bottom: 1px solid var(--border); }
+  .bd-bar__right { min-width: unset; width: 100%; padding: 14px 16px; gap: 10px; }
+  .bd-btn { width: 100%; }
+}
+@media (max-width: 520px) {
+  .bd-section { padding: 24px 14px 22px; border-radius: 14px; margin: 20px auto; }
+  .bd-strip {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px; overflow-x: unset; padding-bottom: 0; flex-wrap: unset; align-items: unset;
+  }
+  .bd-connector { display: none; }
+  .bd-card { width: 100%; min-width: unset; flex: unset; }
+  .bd-bar__item { padding: 9px 12px; gap: 9px; }
+  .bd-bar__item-img { width: 36px; height: 36px; border-radius: 7px; }
+  .bd-bar__item-name { font-size: 11px; }
+}
+@media (max-width: 360px) {
+  .bd-strip { gap: 7px; }
+  .bd-card__body { padding: 8px 9px 10px; }
+  .bd-card__name { font-size: 11px; }
+  .bd-bar__right { padding: 12px 13px; }
+}
+</style>
+
+<script>
+  var strip    = document.querySelector('.bd-strip');
+  var leftBtn  = document.getElementById('bd-left');
+  var rightBtn = document.getElementById('bd-right');
+
+  if (strip && leftBtn && rightBtn) {
+    function updateArrows() {
+      leftBtn.disabled  = strip.scrollLeft <= 0;
+      rightBtn.disabled = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 5;
+    }
+    leftBtn.addEventListener('click',  function () { strip.scrollBy({ left: -200, behavior: 'smooth' }); });
+    rightBtn.addEventListener('click', function () { strip.scrollBy({ left:  200, behavior: 'smooth' }); });
+    strip.addEventListener('scroll', updateArrows);
+    updateArrows();
+  }
+
+  (function () {
+    'use strict';
+
+    document.addEventListener('DOMContentLoaded', function () {
+
+      var btn            = document.getElementById('bd-btn');
+      var msg            = document.getElementById('bd-msg');
+      var countEl        = document.getElementById('bd-count');
+      var totalEl        = document.getElementById('bd-total');
+      var btnText        = document.getElementById('bd-btn-text');
+      var productsList   = document.getElementById('bd-products-list');
+      var productsHeader = document.getElementById('bd-products-header');
+      var collapseArrow  = document.getElementById('bd-collapse-arrow');
+      var collapseSub    = document.getElementById('bd-collapse-sub');
+      var headerImgs     = document.getElementById('bd-header-imgs');
+      var cards          = Array.from(document.querySelectorAll('[data-card]'));
+
+      if (!btn || !cards.length) return;
+
+      var bdListOpen = false;
+
+      window.bdToggleList = function () {
+        bdListOpen = !bdListOpen;
+        productsList.classList.toggle('is-open', bdListOpen);
+        collapseArrow.classList.toggle('is-open', bdListOpen);
+        productsHeader.classList.toggle('is-open', bdListOpen);
+        collapseSub.textContent = bdListOpen
+          ? '{{ block.settings.tap_to_collapse_label }}'
+          : '{{ block.settings.tap_to_view_label }}';
+      };
+
+      function money(cents) {
+        return (cents / 100).toLocaleString('en-IN', {
+          style: 'currency',
+          currency: (window.Shopify && window.Shopify.currency && window.Shopify.currency.active) || 'INR',
+          minimumFractionDigits: 2
+        });
+      }
+
+      function getQty(card) {
+        var slider = card.querySelector('[data-card-slider]');
+        return slider ? parseInt(slider.value, 10) : 1;
+      }
+
+      function updateSliderFill(slider) {
+        var min = parseInt(slider.min, 10);
+        var max = parseInt(slider.max, 10);
+        var val = parseInt(slider.value, 10);
+        var pct = ((val - min) / (max - min)) * 100;
+        var accent  = getComputedStyle(document.querySelector('.bd-section')).getPropertyValue('--accent').trim();
+        var trackBg = getComputedStyle(document.querySelector('.bd-section')).getPropertyValue('--border').trim();
+        slider.style.background =
+          'linear-gradient(to right, ' + accent + ' 0%, ' + accent + ' ' + pct + '%, ' + trackBg + ' ' + pct + '%, ' + trackBg + ' 100%)';
+      }
+
+      function buildBarItems() {
+        productsList.innerHTML = cards.map(function (card, i) {
+          var img   = card.dataset.img  || '';
+          var name  = card.dataset.name || 'Product';
+          var price = parseInt(card.dataset.price || 0, 10);
+          var qty   = getQty(card);
+          return [
+            '<div class="bd-bar__item is-on" data-bar-item="' + i + '">',
+            '<img class="bd-bar__item-img" src="' + img + '" alt="' + name + '" loading="lazy" />',
+            '<div class="bd-bar__item-info">',
+            '<span class="bd-bar__item-name">' + name + '</span>',
+            '<span class="bd-bar__item-price" data-bar-price="' + i + '">' + money(price * qty) + '</span>',
+            '<span class="bd-bar__item-qty" data-bar-qty="' + i + '">Qty: ' + qty + '</span>',
+            '</div>',
+            '<div class="bd-bar__item-status" data-bar-status="' + i + '">',
+            '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+            '</div>',
+            '</div>'
+          ].join('');
+        }).join('');
+      }
+
+      function syncBarItem(idx, on) {
+        var item = productsList.querySelector('[data-bar-item="' + idx + '"]');
+        if (!item) return;
+        item.classList.toggle('is-on',  on);
+        item.classList.toggle('is-off', !on);
+        var status = item.querySelector('[data-bar-status]');
+        if (status) {
+          status.innerHTML = on
+            ? '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+            : '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+        }
+      }
+
+      function syncBarPrice(idx) {
+        var card = cards[idx];
+        if (!card) return;
+        var price    = parseInt(card.dataset.price || 0, 10);
+        var qty      = getQty(card);
+        var barPrice = productsList.querySelector('[data-bar-price="' + idx + '"]');
+        var barQty   = productsList.querySelector('[data-bar-qty="' + idx + '"]');
+        if (barPrice) barPrice.textContent = money(price * qty);
+        if (barQty)   barQty.textContent   = 'Qty: ' + qty;
+      }
+
+      function syncHeaderImgs() {
+        if (!headerImgs) return;
+        var onCards = cards.filter(function (c) { return c.classList.contains('is-on'); });
+        headerImgs.innerHTML = onCards.slice(0, 4).map(function (c) {
+          return '<img src="' + (c.dataset.img || '') + '" alt="" loading="lazy" />';
+        }).join('');
+      }
+
+      function update() {
+        var count = 0, total = 0;
+        cards.forEach(function (card, i) {
+          var on  = card.classList.contains('is-on');
+          var qty = getQty(card);
+          syncBarItem(i, on);
+          syncBarPrice(i);
+          if (on) { count++; total += parseInt(card.dataset.price || 0, 10) * qty; }
+        });
+        countEl.textContent = count;
+        totalEl.textContent = money(total);
+        btn.disabled        = count === 0;
+        btnText.textContent = count === 0
+          ? '{{ block.settings.cta_empty_label }}'
+          : '{{ block.settings.cta_label }}';
+        syncHeaderImgs();
+        if (!bdListOpen) collapseSub.textContent = '{{ block.settings.tap_to_view_label }}';
+      }
+
+      function toggleCard(card) {
+        card.classList.toggle('is-on');
+        card.classList.toggle('is-off');
+        update();
+      }
+
+      cards.forEach(function (card) {
+        card.addEventListener('click', function (e) {
+          if (e.target.closest('[data-card-select]')) return;
+          if (e.target.closest('.bd-qty-wrap')) return;
+          toggleCard(card);
+        });
+      });
+
+      cards.forEach(function (card, idx) {
+        var slider = card.querySelector('[data-card-slider]');
+        var qtyVal = card.querySelector('.bd-qty-val');
+        if (!slider) return;
+        updateSliderFill(slider);
+        slider.addEventListener('input', function () {
+          var qty   = parseInt(slider.value, 10);
+          var price = parseInt(card.dataset.price || 0, 10);
+          if (qtyVal) qtyVal.textContent = qty;
+          updateSliderFill(slider);
+          var cardPrice = card.querySelector('.bd-card__price');
+          if (cardPrice) cardPrice.textContent = money(price * qty);
+          if (card.classList.contains('is-off')) {
+            card.classList.add('is-on');
+            card.classList.remove('is-off');
+          }
+          update();
+        });
+      });
+
+      productsList.addEventListener('click', function (e) {
+        var item = e.target.closest('[data-bar-item]');
+        if (!item) return;
+        var idx = parseInt(item.dataset.barItem, 10);
+        if (!isNaN(idx) && cards[idx]) toggleCard(cards[idx]);
+      });
+
+      document.querySelectorAll('[data-card-select]').forEach(function (sel) {
+        sel.addEventListener('change', function () {
+          var opt  = sel.options[sel.selectedIndex];
+          var card = sel.closest('[data-card]');
+          if (!card) return;
+          var qty = getQty(card);
+          card.dataset.variantId = opt.value;
+          card.dataset.price     = opt.dataset.price;
+          var cardPrice = card.querySelector('.bd-card__price');
+          if (cardPrice) cardPrice.textContent = money(parseInt(opt.dataset.price, 10) * qty);
+          card.classList.add('is-on');
+          card.classList.remove('is-off');
+          update();
+        });
+      });
+
+      document.addEventListener('variant:change', function (e) {
+        var v = e.detail && e.detail.variant;
+        if (v) syncMain(v);
+      });
+
+      var lastParam = new URLSearchParams(location.search).get('variant');
+      window.addEventListener('popstate', checkUrl);
+      var _push = history.pushState.bind(history);
+      history.pushState = function () { _push.apply(history, arguments); checkUrl(); };
+
+      function checkUrl() {
+        var p = new URLSearchParams(location.search).get('variant');
+        if (p && p !== lastParam) { lastParam = p; fetchAndSync(p); }
+      }
+
+      function fetchAndSync(variantId) {
+        var handle =
+          (window.ShopifyAnalytics &&
+           window.ShopifyAnalytics.meta &&
+           window.ShopifyAnalytics.meta.product &&
+           window.ShopifyAnalytics.meta.product.handle) ||
+          location.pathname.split('/products/')[1].split('?')[0];
+        if (!handle) return;
+        fetch('/products/' + handle + '.js')
+          .then(function (r) { return r.json(); })
+          .then(function (p) {
+            var v = p.variants.find(function (v) { return String(v.id) === String(variantId); });
+            if (v) syncMain(v);
+          })
+          .catch(function () {});
+      }
+
+      function syncMain(variant) {
+        var main = cards[0];
+        if (!main) return;
+        var qty = getQty(main);
+        main.dataset.variantId = variant.id;
+        main.dataset.price     = variant.price;
+        var vLabel = document.getElementById('bd-main-variant');
+        if (vLabel && variant.title !== 'Default Title') vLabel.textContent = variant.title;
+        var pEl = document.getElementById('bd-main-price');
+        if (pEl) pEl.textContent = money(variant.price * qty);
+        var imgEl = document.getElementById('bd-main-img');
+        if (imgEl && variant.featured_image && variant.featured_image.src) imgEl.src = variant.featured_image.src;
+        update();
+      }
+
+      btn.addEventListener('click', function () {
+        var items = [];
+        cards.forEach(function (card) {
+          if (card.classList.contains('is-on') && card.dataset.variantId) {
+            items.push({ id: parseInt(card.dataset.variantId, 10), quantity: getQty(card), properties: { Type: 'Bundle' } });
+          }
+        });
+        if (!items.length) return;
+
+        btn.disabled        = true;
+        btnText.textContent = '{{ block.settings.cta_adding_label }}';
+        msg.style.display   = 'none';
+        msg.className       = 'bd-msg';
+
+        fetch('/cart/add.js', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ items: items })
+        })
+        .then(function (r) {
+          if (!r.ok) return r.json().then(function (e) { throw new Error(e.description || 'Error adding to cart'); });
+          return r.json();
+        })
+        .then(function () {
+          btnText.textContent = '{{ block.settings.cta_added_label }}';
+          msg.textContent     = items.length + ' item(s) added to your cart.';
+          msg.classList.add('ok');
+          msg.style.display   = 'block';
+          setTimeout(function () { window.location.href = '/cart'; }, 1400);
+        })
+        .catch(function (err) {
+          btn.disabled        = false;
+          btnText.textContent = '{{ block.settings.cta_label }}';
+          msg.textContent     = 'Error: ' + err.message;
+          msg.classList.add('err');
+          msg.style.display   = 'block';
+        });
+      });
+
+      buildBarItems();
+      update();
+    });
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Upsell-Bundle",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "🎨 Colors — Section"
+    },
+    {
+      "type": "color",
+      "id": "color_bg",
+      "label": "Section background",
+      "default": "#fdfbf7"
+    },
+    {
+      "type": "color",
+      "id": "color_card",
+      "label": "Card background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "color_card_selected",
+      "label": "Card background (selected)",
+      "default": "#f5f3ff"
+    },
+    {
+      "type": "color",
+      "id": "color_faint",
+      "label": "Subtle background / hover",
+      "default": "#f3f4f6"
+    },
+    {
+      "type": "header",
+      "content": "🎨 Colors — Text"
+    },
+    {
+      "type": "color",
+      "id": "color_text",
+      "label": "Primary text",
+      "default": "#111827"
+    },
+    {
+      "type": "color",
+      "id": "color_muted",
+      "label": "Muted / secondary text",
+      "default": "#6b7280"
+    },
+    {
+      "type": "header",
+      "content": "🎨 Colors — Accent & Borders"
+    },
+    {
+      "type": "color",
+      "id": "color_accent",
+      "label": "Accent color (buttons, prices, highlights)",
+      "default": "#7c3aed"
+    },
+    {
+      "type": "color",
+      "id": "color_accent_dark",
+      "label": "Accent dark (gradient start)",
+      "default": "#6d28d9"
+    },
+    {
+      "type": "color",
+      "id": "color_border",
+      "label": "Default border",
+      "default": "#e5e7eb"
+    },
+    {
+      "type": "color",
+      "id": "color_border_highlight",
+      "label": "Highlighted border (selected cards)",
+      "default": "#a78bfa"
+    },
+    {
+      "type": "header",
+      "content": "🎨 Colors — Status"
+    },
+    {
+      "type": "color",
+      "id": "color_success",
+      "label": "Success (green)",
+      "default": "#059669"
+    },
+    {
+      "type": "color",
+      "id": "color_error",
+      "label": "Error (red)",
+      "default": "#dc2626"
+    },
+    {
+      "type": "header",
+      "content": "🔲 Shape"
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "label": "Card corner radius (px)",
+      "min": 0,
+      "max": 28,
+      "step": 2,
+      "default": 14
+    },
+    {
+      "type": "header",
+      "content": "✏️ Text & Labels"
+    },
+    {
+      "type": "text",
+      "id": "pill_label",
+      "label": "Top pill label",
+      "default": "Bundle Deal"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Section heading",
+      "default": "Frequently Bought Together"
+    },
+    {
+      "type": "text",
+      "id": "subheading",
+      "label": "Section subheading",
+      "default": "Tap any product card to add or remove it from your bundle"
+    },
+    {
+      "type": "text",
+      "id": "main_product_badge",
+      "label": "Main product badge text",
+      "default": "This product"
+    },
+    {
+      "type": "text",
+      "id": "qty_label",
+      "label": "Quantity label",
+      "default": "Qty"
+    },
+    {
+      "type": "text",
+      "id": "total_label",
+      "label": "Total label",
+      "default": "Total"
+    },
+    {
+      "type": "text",
+      "id": "items_selected_label",
+      "label": "Items selected label",
+      "default": "items selected"
+    },
+    {
+      "type": "text",
+      "id": "tap_to_view_label",
+      "label": "Collapse closed label",
+      "default": "Tap to view items"
+    },
+    {
+      "type": "text",
+      "id": "tap_to_collapse_label",
+      "label": "Collapse open label",
+      "default": "Tap to collapse"
+    },
+    {
+      "type": "text",
+      "id": "cta_label",
+      "label": "CTA button text",
+      "default": "Add Bundle to Cart"
+    },
+    {
+      "type": "text",
+      "id": "cta_empty_label",
+      "label": "CTA text when nothing selected",
+      "default": "Select at least one item"
+    },
+    {
+      "type": "text",
+      "id": "cta_adding_label",
+      "label": "CTA text while adding",
+      "default": "Adding…"
+    },
+    {
+      "type": "text",
+      "id": "cta_added_label",
+      "label": "CTA text after added",
+      "default": "✓ Added!"
+    },
+    {
+      "type": "text",
+      "id": "empty_label",
+      "label": "No bundle configured message",
+      "default": "No bundle products configured."
+    }
+  ]
+}
+{% endschema %}

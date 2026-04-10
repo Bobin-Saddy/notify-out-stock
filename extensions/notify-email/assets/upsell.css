@@ -1,0 +1,142 @@
+.hidden {
+  display: none;
+}
+
+/* Overlay */
+.upsell-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 9998;
+}
+
+/* Popup */
+.upsell-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  width: 90%;
+  max-width: 600px;
+  background: #fff;
+  border-radius: 16px;
+  z-index: 9999;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  animation: fadeIn 0.3s ease forwards;
+}
+
+/* Header */
+.upsell-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.upsell-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.upsell-close {
+  font-size: 22px;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/* Grid */
+.upsell-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+/* Card */
+.upsell-card {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: 0.2s;
+  background: #fafafa;
+}
+
+.upsell-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+}
+
+.upsell-card img {
+  width: 100%;
+  /* height: 140px; */
+  object-fit: cover;
+}
+
+/* Info */
+.upsell-info {
+  padding: 10px;
+  text-align: center;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.price {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111;
+  margin-bottom: 8px;
+}
+
+/* Button */
+.upsell-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.upsell-btn:hover {
+  opacity: 0.9;
+}
+
+.upsell-continue {
+  margin-top: 15px;
+  width: 100%;
+  padding: 10px;
+  background: #000;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -60%) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .upsell-grid {
+    grid-template-columns: 1fr;
+  }
+}

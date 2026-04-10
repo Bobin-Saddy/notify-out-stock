@@ -1,0 +1,80 @@
+{% comment %}
+  ============================================================
+  SNIPPET: cart-bundle-badge.liquid
+
+
+  Place this inside your cart line item loop, right after the
+  product title (or wherever you want the badge to appear).
+
+  Compatible with: Dawn, Debut, Refresh, and any theme that
+  loops over cart.items or item in cart.items.
+
+  HOW IT WORKS:
+  - When items are added via the bundle section, two hidden
+    line item properties are attached:
+      _bundle           → "Frequently Bought Together"
+      _bundle_group_id  → "bundle-1718000000000"  (shared timestamp)
+  - Properties starting with underscore (_) are hidden by
+    Shopify in default order emails/receipts — customers won't
+    see the raw key, only what we render here.
+  - This snippet reads those properties and renders a visible
+    badge + optional group indicator.
+  ============================================================
+{% endcomment %}
+ 
+{% assign is_bundle_item = false %}
+{% assign bundle_label   = '' %}
+{% assign bundle_group   = '' %}
+
+{% for p in item.properties %}
+  {% if p.first == '_bundle' %}
+    {% assign is_bundle_item = true %}
+    {% assign bundle_label   = p.last %}
+  {% endif %}
+  {% if p.first == '_bundle_group_id' %}
+    {% assign bundle_group = p.last %}
+  {% endif %}
+{% endfor %}
+
+{% if is_bundle_item %}
+  <div class="cart-bundle-tag">
+    <span class="cart-bundle-badge">
+      <svg class="cart-bundle-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+      {{ bundle_label }}
+    </span>
+  </div>
+
+  <style>
+    .cart-bundle-tag {
+      margin-top: 6px;
+    }
+
+    .cart-bundle-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #fff8e7;
+      color: #7a5500;
+      border: 1px solid #f5d87a;
+      border-radius: 20px;
+      padding: 3px 10px 3px 7px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+
+    .cart-bundle-icon {
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+      stroke: #a07800;
+    }
+  </style>
+{% endif %}
