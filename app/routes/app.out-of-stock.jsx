@@ -254,44 +254,10 @@ export default function SettingsPage() {
               <div style={s.rightCol}>
 
                 {/* Stats Card */}
-                <div style={{ ...s.card, padding: '20px 22px' }}>
-                  <div style={s.statHeading}>Overview</div>
-                  <div style={s.statRow}>
-                    <div>
-                      <div style={s.statLabel}>Out of stock</div>
-                      <div style={s.statVal}>24</div>
-                    </div>
-                    <span style={{ ...s.chip, background: '#fff8ec', color: '#f59e0b' }}>+3 today</span>
-                  </div>
-                  <div style={s.statDivider} />
-                  <div style={s.statRow}>
-                    <div>
-                      <div style={s.statLabel}>Alerts sent</div>
-                      <div style={s.statVal}>138</div>
-                    </div>
-                    <span style={{ ...s.chip, background: '#e8f8f0', color: '#10a37f' }}>Active</span>
-                  </div>
-                </div>
+             
 
                 {/* Activity Card */}
-                <div style={s.card}>
-                  <div style={s.actHeader}>Recent alerts</div>
-                  {RECENT_ALERTS.map((a, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        ...s.actItem,
-                        borderBottom: i < RECENT_ALERTS.length - 1 ? '1px solid #f7f4f0' : 'none',
-                      }}
-                    >
-                      <div style={{ ...s.actDot, background: a.color }} />
-                      <div>
-                        <div style={s.actName}>{a.name}</div>
-                        <div style={s.actTime}>{a.time}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+           
 
                 {/* Upgrade CTA */}
                 <div style={s.planCard}>
