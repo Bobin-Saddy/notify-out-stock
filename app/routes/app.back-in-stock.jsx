@@ -1,11 +1,12 @@
 import { json } from "@remix-run/node";
 import { useLoaderData, useSubmit, Form } from "react-router";
-import React from 'react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+import React, { useState } from 'react';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
-import { 
-  Bell, Eye, MousePointer2, Settings, CheckCircle2, TrendingUp, Mail, Package, Search
+import {
+  Bell, Eye, MousePointer2, Settings, CheckCircle2, TrendingUp, Mail, Package, Search,
+  ChevronDown, ArrowUpRight, Zap, Filter, RefreshCw
 } from 'lucide-react';
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
@@ -14,18 +15,17 @@ export async function loader({ request }) {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
   const url = new URL(request.url);
-  
+
   const searchQuery = url.searchParams.get("search") || "";
   const variantSearch = url.searchParams.get("variant") || "";
   const dateFilter = url.searchParams.get("dateRange") || "7";
 
   const dateFilterStart = new Date(Date.now() - parseInt(dateFilter) * 24 * 60 * 60 * 1000);
 
-  // Build where clause for filtered records
   const whereClause = {
     shop,
     createdAt: { gte: dateFilterStart },
-    ...(searchQuery && { 
+    ...(searchQuery && {
       OR: [
         { email: { contains: searchQuery } },
         { productTitle: { contains: searchQuery } }
@@ -39,7 +39,6 @@ export async function loader({ request }) {
     prisma.backInStock.findMany({ where: whereClause, take: 10, orderBy: { createdAt: 'desc' } })
   ]);
 
-  // Real Counts (not percentages)
   const stats = {
     total: allRecords.length,
     sent: allRecords.filter(r => r.notified).length,
@@ -48,46 +47,34 @@ export async function loader({ request }) {
     purchased: allRecords.filter(r => r.purchased).length,
   };
 
-  // Calculate delivery, open, click rates as percentages
   const deliveryRate = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0;
   const openRate = stats.sent > 0 ? Math.round((stats.opened / stats.sent) * 100) : 0;
   const clickRate = stats.opened > 0 ? Math.round((stats.clicked / stats.opened) * 100) : 0;
   const conversionRate = stats.clicked > 0 ? Math.round((stats.purchased / stats.clicked) * 100) : 0;
 
-  // Enriched Table Data
   const enrichedSubscribers = await Promise.all(
     recentSubscribers.map(async (sub) => {
-      // If productTitle already exists in DB, use it
-      if (sub.productTitle && sub.productTitle !== 'Unknown Product') {
-        return sub;
-      }
-
-      // Otherwise, fetch from Shopify
+      if (sub.productTitle && sub.productTitle !== 'Unknown Product') return sub;
       try {
         const response = await admin.graphql(`
-          query { 
-            productVariant(id: "gid://shopify/ProductVariant/${sub.variantId}") { 
-              displayName 
-              product { title } 
-            } 
+          query {
+            productVariant(id: "gid://shopify/ProductVariant/${sub.variantId}") {
+              displayName
+              product { title }
+            }
           }`);
         const { data } = await response.json();
-        return { 
-          ...sub, 
+        return {
+          ...sub,
           productTitle: data?.productVariant?.product?.title || sub.productTitle || 'Unknown Product',
           variantTitle: data?.productVariant?.displayName || sub.variantTitle || 'N/A'
         };
-      } catch { 
-        return { 
-          ...sub, 
-          productTitle: sub.productTitle || 'Deleted Product', 
-          variantTitle: sub.variantTitle || 'N/A' 
-        }; 
+      } catch {
+        return { ...sub, productTitle: sub.productTitle || 'Deleted Product', variantTitle: sub.variantTitle || 'N/A' };
       }
     })
   );
 
-  // Trend Data with Clicked added
   const trendData = Object.values(allRecords.reduce((acc, curr) => {
     const date = new Date(curr.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     if (!acc[date]) acc[date] = { name: date, Requests: 0, Sent: 0, Opened: 0, Clicked: 0 };
@@ -98,307 +85,363 @@ export async function loader({ request }) {
     return acc;
   }, {}));
 
-  // Top Performing Products with images
   const productPerformance = allRecords.reduce((acc, curr) => {
     if (!curr.productTitle || curr.productTitle === 'Unknown Product') return acc;
-    
     const key = `${curr.productTitle}_${curr.productId}`;
-    
     if (!acc[key]) {
-      acc[key] = {
-        productTitle: curr.productTitle,
-        productId: curr.productId,
-        variantId: curr.variantId,
-        requests: 0,
-        sent: 0,
-        opened: 0,
-        clicked: 0,
-        purchased: 0,
-      };
+      acc[key] = { productTitle: curr.productTitle, productId: curr.productId, variantId: curr.variantId, requests: 0, sent: 0, opened: 0, clicked: 0, purchased: 0 };
     }
-    
     acc[key].requests++;
     if (curr.notified) acc[key].sent++;
     if (curr.opened) acc[key].opened++;
     if (curr.clicked) acc[key].clicked++;
     if (curr.purchased) acc[key].purchased++;
-    
     return acc;
   }, {});
 
-  const topProductsRaw = Object.values(productPerformance)
-    .sort((a, b) => b.requests - a.requests)
-    .slice(0, 5);
+  const topProductsRaw = Object.values(productPerformance).sort((a, b) => b.requests - a.requests).slice(0, 5);
 
-  // Fetch product images for top products
   const topProducts = await Promise.all(
     topProductsRaw.map(async (product) => {
       try {
         const response = await admin.graphql(`
           query {
             productVariant(id: "gid://shopify/ProductVariant/${product.variantId}") {
-              product {
-                featuredImage {
-                  url
-                }
-              }
+              product { featuredImage { url } }
             }
-          }
-        `);
+          }`);
         const { data } = await response.json();
-        return {
-          ...product,
-          image: data?.productVariant?.product?.featuredImage?.url || 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png'
-        };
+        return { ...product, image: data?.productVariant?.product?.featuredImage?.url || 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png' };
       } catch {
-        return {
-          ...product,
-          image: 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png'
-        };
+        return { ...product, image: 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png' };
       }
     })
   );
 
-  return json({ 
-    stats, 
-    deliveryRate,
-    openRate,
-    clickRate,
-    conversionRate,
-    subscribers: enrichedSubscribers, 
-    trendData, 
-    topProducts,
-    filters: { searchQuery, variantSearch, dateFilter } 
-  });
+  return json({ stats, deliveryRate, openRate, clickRate, conversionRate, subscribers: enrichedSubscribers, trendData, topProducts, filters: { searchQuery, variantSearch, dateFilter } });
 }
 
+// ─── Stat Card ────────────────────────────────────────────────────────────────
+function StatCard({ label, value, icon: Icon, accent, sub }) {
+  return (
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}
+      className="relative overflow-hidden bg-white rounded-2xl p-5 border border-gray-100 shadow-sm group hover:shadow-md transition-all duration-300">
+      <div className="flex items-start justify-between mb-4">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accent.bg}`}>
+          <Icon size={18} className={accent.text} />
+        </div>
+        <span className={`text-[10px] font-bold tracking-widest uppercase px-2 py-1 rounded-full ${accent.pill}`}>
+          <ArrowUpRight size={10} className="inline mr-0.5" />live
+        </span>
+      </div>
+      <p className="text-3xl font-black text-gray-900 mb-0.5">{value}</p>
+      <p className="text-xs text-gray-400 font-medium">{label}</p>
+      {sub && <p className="text-[10px] text-gray-300 mt-1">{sub}</p>}
+      <div className={`absolute bottom-0 left-0 h-0.5 w-full ${accent.bar}`} />
+    </div>
+  );
+}
+
+// ─── Funnel Step ─────────────────────────────────────────────────────────────
+function FunnelStep({ label, val, pct, color }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-20 shrink-0">{label}</span>
+      <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-700 ease-out ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-bold text-gray-700 w-8 text-right">{val}</span>
+      <span className="text-[10px] text-gray-400 w-7 text-right">{pct}%</span>
+    </div>
+  );
+}
+
+// ─── Custom Tooltip ───────────────────────────────────────────────────────────
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-100 shadow-xl rounded-xl px-4 py-3 text-xs">
+      <p className="font-bold text-gray-700 mb-2">{label}</p>
+      {payload.map((p) => (
+        <div key={p.name} className="flex items-center gap-2 mb-1">
+          <span className="w-2 h-2 rounded-full inline-block" style={{ background: p.color }} />
+          <span className="text-gray-500">{p.name}:</span>
+          <span className="font-bold text-gray-800">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { stats, deliveryRate, openRate, clickRate, conversionRate, subscribers, trendData, topProducts, filters } = useLoaderData();
   const submit = useSubmit();
 
   const metrics = [
-    { label: 'Total Requests', val: stats.total, icon: Mail, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Notifications Sent', val: stats.sent, icon: Bell, color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Delivery Rate', val: deliveryRate + '%', icon: CheckCircle2, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-    { label: 'Emails Opened', val: stats.opened, icon: Eye, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { label: 'Links Clicked', val: stats.clicked, icon: MousePointer2, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { label: 'Conversion Rate', val: conversionRate + '%', icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Total Requests', value: stats.total, icon: Mail, accent: { bg: 'bg-blue-50', text: 'text-blue-500', pill: 'bg-blue-50 text-blue-400', bar: 'bg-blue-400' } },
+    { label: 'Notifications Sent', value: stats.sent, icon: Bell, accent: { bg: 'bg-emerald-50', text: 'text-emerald-500', pill: 'bg-emerald-50 text-emerald-400', bar: 'bg-emerald-400' } },
+    { label: 'Delivery Rate', value: `${deliveryRate}%`, icon: CheckCircle2, accent: { bg: 'bg-cyan-50', text: 'text-cyan-500', pill: 'bg-cyan-50 text-cyan-400', bar: 'bg-cyan-400' } },
+    { label: 'Emails Opened', value: stats.opened, icon: Eye, accent: { bg: 'bg-violet-50', text: 'text-violet-500', pill: 'bg-violet-50 text-violet-400', bar: 'bg-violet-400' } },
+    { label: 'Links Clicked', value: stats.clicked, icon: MousePointer2, accent: { bg: 'bg-amber-50', text: 'text-amber-500', pill: 'bg-amber-50 text-amber-400', bar: 'bg-amber-400' } },
+    { label: 'Conversion Rate', value: `${conversionRate}%`, icon: TrendingUp, accent: { bg: 'bg-rose-50', text: 'text-rose-500', pill: 'bg-rose-50 text-rose-400', bar: 'bg-rose-400' } },
   ];
 
   const funnelSteps = [
-    { label: 'Request', val: stats.total, pct: stats.total > 0 ? 100 : 0 },
-    { label: 'Sent', val: stats.sent, pct: stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0 },
-    { label: 'Opened', val: stats.opened, pct: stats.total > 0 ? Math.round((stats.opened / stats.total) * 100) : 0 },
-    { label: 'Clicked', val: stats.clicked, pct: stats.total > 0 ? Math.round((stats.clicked / stats.total) * 100) : 0 },
-    { label: 'Purchased', val: stats.purchased, pct: stats.total > 0 ? Math.round((stats.purchased / stats.total) * 100) : 0 },
+    { label: 'Requests', val: stats.total, pct: 100, color: 'bg-blue-400' },
+    { label: 'Sent', val: stats.sent, pct: stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0, color: 'bg-emerald-400' },
+    { label: 'Opened', val: stats.opened, pct: stats.total > 0 ? Math.round((stats.opened / stats.total) * 100) : 0, color: 'bg-violet-400' },
+    { label: 'Clicked', val: stats.clicked, pct: stats.total > 0 ? Math.round((stats.clicked / stats.total) * 100) : 0, color: 'bg-amber-400' },
+    { label: 'Purchased', val: stats.purchased, pct: stats.total > 0 ? Math.round((stats.purchased / stats.total) * 100) : 0, color: 'bg-rose-400' },
   ];
 
   return (
-    <div className="bg-[#f6f6f7] min-h-screen p-8 font-sans text-gray-900">
-      <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
-      
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-2xl font-bold">Back In Stock Dashboard</h1>
-            <p className="text-sm text-gray-500">Monitor Back In Stock notification performance.</p>
-          </div>
-          <button className="bg-black text-white px-5 py-2 rounded-xl flex items-center gap-2 text-sm font-medium">
-            <Settings size={16} /> Settings
-          </button>
-        </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        body { background: #f5f5f7; }
+        .dash-root { font-family: 'DM Sans', sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .table-row:hover { background: #fafafa; }
+        .card-hover { transition: box-shadow .2s, transform .2s; }
+        .card-hover:hover { box-shadow: 0 8px 30px rgba(0,0,0,.06); transform: translateY(-1px); }
+      `}</style>
 
-        {/* Filters */}
-        <Form method="get" onChange={(e) => submit(e.currentTarget)} className="grid grid-cols-4 gap-4">
-          <select name="dateRange" defaultValue={filters.dateFilter} className="bg-white border border-gray-200 p-2.5 rounded-xl text-sm outline-none shadow-sm">
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-          </select>
-          <div className="relative col-span-1">
-            <Search className="absolute left-3 top-3 text-gray-400" size={16} />
-            <input name="search" placeholder="Search Email/Product" defaultValue={filters.searchQuery} className="w-full bg-white border border-gray-200 p-2.5 pl-10 rounded-xl text-sm outline-none shadow-sm" />
-          </div>
-          <input name="variant" placeholder="Variant ID Search" defaultValue={filters.variantSearch} className="bg-white border border-gray-200 p-2.5 rounded-xl text-sm outline-none shadow-sm" />
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
-            Apply Filters
-          </button>
-        </Form>
+      <div className="dash-root bg-[#f5f5f7] min-h-screen" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+        <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
 
-        {/* 6 Grid Metrics */}
-        <div className="grid grid-cols-3 gap-6">
-          {metrics.map((m, i) => (
-            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-5">
-              <div className={`p-4 rounded-xl ${m.bg} ${m.color}`}><m.icon size={22} /></div>
-              <div>
-                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{m.label}</p>
-                <p className="text-2xl font-black">{m.val}</p>
-              </div>
+        {/* Top Nav Bar */}
+        <div className="bg-white border-b border-gray-100 px-8 py-4 flex items-center justify-between sticky top-0 z-20" style={{ backdropFilter: 'blur(12px)', background: 'rgba(255,255,255,0.95)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
+              <Zap size={15} className="text-white" />
             </div>
-          ))}
-        </div>
-
-        {/* Charts & Funnel */}
-        <div className="grid grid-cols-12 gap-6">
-          {/* Trend Chart */}
-          <div className="col-span-8 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-            <h3 className="font-bold mb-8 text-gray-800">Requests and Notifications Trend</h3>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8'}} />
-                  <Tooltip cursor={{fill: '#f9fafb'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)'}} />
-                  <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{paddingTop: '20px'}}/>
-                  <Bar name="Requests" dataKey="Requests" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={10} />
-                  <Bar name="Sent" dataKey="Sent" fill="#10b981" radius={[4, 4, 0, 0]} barSize={10} />
-                  <Bar name="Opened" dataKey="Opened" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={10} />
-                  <Bar name="Clicked" dataKey="Clicked" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={10} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div>
+              <h1 className="text-sm font-bold text-gray-900 leading-none">Back In Stock</h1>
+              <p className="text-[10px] text-gray-400 mt-0.5">Notification Dashboard</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <button className="text-xs text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 hover:border-gray-300 hover:bg-gray-50 transition-all">
+              <RefreshCw size={12} /> Refresh
+            </button>
+            <button className="text-xs bg-gray-900 text-white px-4 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-gray-700 transition-all font-medium">
+              <Settings size={12} /> Settings
+            </button>
+          </div>
+        </div>
 
-          {/* Funnel */}
-          <div className="col-span-4 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-            <h3 className="font-bold mb-8 text-gray-800">Notification Performance Funnel</h3>
-            <div className="space-y-6">
-              {funnelSteps.map((step) => (
-                <div key={step.label} className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold text-gray-400 uppercase tracking-wide">
-                    <span>{step.label}</span>
-                    <span className="text-gray-900">{step.val}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-blue-500 rounded-full transition-all duration-1000 ease-out" 
-                        style={{ width: `${step.pct}%` }}
-                      ></div>
-                    </div>
-                    <span className="text-[10px] font-bold text-gray-400 w-8">{step.pct}%</span>
-                  </div>
+        <div className="max-w-7xl mx-auto px-6 py-6 space-y-5">
+
+          {/* Filters */}
+          <Form method="get" onChange={(e) => submit(e.currentTarget)}
+            className="bg-white border border-gray-100 rounded-2xl px-5 py-4 flex items-center gap-3 shadow-sm">
+            <Filter size={14} className="text-gray-400 shrink-0" />
+            <select name="dateRange" defaultValue={filters.dateFilter}
+              className="text-xs font-medium border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 outline-none cursor-pointer text-gray-600">
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-2.5 text-gray-300" size={13} />
+              <input name="search" placeholder="Search email or product…" defaultValue={filters.searchQuery}
+                className="w-full text-xs border border-gray-200 bg-gray-50 rounded-lg pl-8 pr-3 py-2 outline-none text-gray-600 placeholder-gray-300" />
+            </div>
+            <input name="variant" placeholder="Variant ID…" defaultValue={filters.variantSearch}
+              className="text-xs border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 outline-none text-gray-600 placeholder-gray-300 w-36" />
+            <button type="submit" className="text-xs bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors ml-auto">
+              Apply
+            </button>
+          </Form>
+
+          {/* Metric Cards */}
+          <div className="grid grid-cols-6 gap-4">
+            {metrics.map((m, i) => <StatCard key={i} {...m} />)}
+          </div>
+
+          {/* Chart + Funnel */}
+          <div className="grid grid-cols-12 gap-5">
+
+            {/* Area Chart */}
+            <div className="col-span-8 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 card-hover">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">Notification Trend</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">Requests, sends, opens & clicks over time</p>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Top Performing Products Section */}
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <h3 className="font-bold mb-4 text-gray-800">Top Performing Products</h3>
-          {topProducts.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50/50 text-[10px] uppercase text-gray-400 font-bold tracking-widest">
-                  <tr>
-                    <th className="px-6 py-3 text-left">Product</th>
-                    <th className="px-6 py-3 text-center">Requests</th>
-                    <th className="px-6 py-3 text-center">Sent</th>
-                    <th className="px-6 py-3 text-center">Opened</th>
-                    <th className="px-6 py-3 text-center">Clicked</th>
-                    <th className="px-6 py-3 text-center">Purchased</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {topProducts.map((product, idx) => (
-                    <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <img 
-                            src={product.image} 
-                            alt={product.productTitle}
-                            className="w-12 h-12 rounded-lg object-cover border border-gray-100"
-                            onError={(e) => {
-                              e.target.src = 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png';
-                            }}
-                          />
-                          <span className="font-medium text-gray-700">{product.productTitle}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full text-xs font-bold">
-                          {product.requests}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="px-3 py-1.5 bg-green-50 text-green-600 rounded-full text-xs font-bold">
-                          {product.sent}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="px-3 py-1.5 bg-purple-50 text-purple-600 rounded-full text-xs font-bold">
-                          {product.opened}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full text-xs font-bold">
-                          {product.clicked}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold">
-                          {product.purchased}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="border border-dashed border-gray-200 rounded-2xl py-12 flex flex-col items-center justify-center text-center">
-              <div className="bg-gray-50 p-4 rounded-full mb-3 text-gray-300">
-                <Package size={32} />
-              </div>
-              <p className="text-sm font-bold text-gray-800">No data found</p>
-              <p className="text-xs text-gray-500">Data will appear here once customers request a back-in-stock notification.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Table */}
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-8 py-6 border-b border-gray-50 flex justify-between items-center">
-            <h3 className="font-bold">Recent Subscribers</h3>
-            <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-3 py-1 rounded-full uppercase tracking-tighter">Live Updates</span>
-          </div>
-          <table className="w-full text-left">
-            <thead className="bg-gray-50/50 text-[10px] uppercase text-gray-400 font-bold tracking-widest">
-              <tr>
-                <th className="px-8 py-4">Customer Email</th>
-                <th className="px-8 py-4">Product</th>
-                <th className="px-8 py-4">Variant</th>
-                <th className="px-8 py-4">Status</th>
-                <th className="px-8 py-4">Created On</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {subscribers.length > 0 ? subscribers.map((sub) => (
-                <tr key={sub.id} className="text-sm hover:bg-gray-50/50 transition-colors">
-                  <td className="px-8 py-5 text-blue-600 font-medium">{sub.email}</td>
-                  <td className="px-8 py-5 font-medium text-gray-700">{sub.productTitle}</td>
-                  <td className="px-8 py-5 text-gray-500 text-xs">{sub.variantTitle || '-'}</td>
-                  <td className="px-8 py-5">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${sub.notified ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
-                      {sub.notified ? 'Notified' : 'Pending'}
+                <div className="flex gap-3 text-[10px] font-semibold text-gray-400">
+                  {[['Requests','bg-blue-400'],['Sent','bg-emerald-400'],['Opened','bg-violet-400'],['Clicked','bg-amber-400']].map(([label, cls]) => (
+                    <span key={label} className="flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full ${cls}`} />{label}
                     </span>
-                  </td>
-                  <td className="px-8 py-5 text-gray-400 text-xs font-medium">
-                    {new Date(sub.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                  </td>
+                  ))}
+                </div>
+              </div>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                    <defs>
+                      {[['req','#3b82f6'],['sent','#10b981'],['open','#8b5cf6'],['click','#f59e0b']].map(([id, color]) => (
+                        <linearGradient key={id} id={`grad-${id}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={color} stopOpacity={0.12} />
+                          <stop offset="95%" stopColor={color} stopOpacity={0} />
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#cbd5e1' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#cbd5e1' }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area type="monotone" dataKey="Requests" stroke="#3b82f6" strokeWidth={2} fill="url(#grad-req)" dot={false} />
+                    <Area type="monotone" dataKey="Sent" stroke="#10b981" strokeWidth={2} fill="url(#grad-sent)" dot={false} />
+                    <Area type="monotone" dataKey="Opened" stroke="#8b5cf6" strokeWidth={2} fill="url(#grad-open)" dot={false} />
+                    <Area type="monotone" dataKey="Clicked" stroke="#f59e0b" strokeWidth={2} fill="url(#grad-click)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Funnel */}
+            <div className="col-span-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 card-hover">
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-gray-800">Performance Funnel</h3>
+                <p className="text-xs text-gray-400 mt-0.5">From request to purchase</p>
+              </div>
+              <div className="space-y-5">
+                {funnelSteps.map((step) => <FunnelStep key={step.label} {...step} />)}
+              </div>
+              <div className="mt-6 pt-5 border-t border-gray-50">
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Open Rate', val: `${openRate}%`, color: 'text-violet-500' },
+                    { label: 'Click Rate', val: `${clickRate}%`, color: 'text-amber-500' },
+                  ].map(item => (
+                    <div key={item.label} className="bg-gray-50 rounded-xl p-3 text-center">
+                      <p className={`text-xl font-black ${item.color}`}>{item.val}</p>
+                      <p className="text-[10px] text-gray-400 font-medium mt-0.5">{item.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Products */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden card-hover">
+            <div className="px-6 py-5 border-b border-gray-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-gray-800">Top Performing Products</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Sorted by total requests</p>
+              </div>
+              <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full">Top 5</span>
+            </div>
+            {topProducts.length > 0 ? (
+              <div className="overflow-x-auto scrollbar-hide">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-[10px] uppercase text-gray-400 font-bold tracking-widest bg-gray-50/60">
+                      <th className="px-6 py-3 text-left">Product</th>
+                      <th className="px-6 py-3 text-center">Requests</th>
+                      <th className="px-6 py-3 text-center">Sent</th>
+                      <th className="px-6 py-3 text-center">Opened</th>
+                      <th className="px-6 py-3 text-center">Clicked</th>
+                      <th className="px-6 py-3 text-center">Purchased</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topProducts.map((product, idx) => (
+                      <tr key={idx} className="table-row border-t border-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="relative">
+                              <span className="absolute -top-1 -left-1 w-4 h-4 bg-gray-900 text-white text-[8px] font-black rounded-full flex items-center justify-center z-10">
+                                {idx + 1}
+                              </span>
+                              <img src={product.image} alt={product.productTitle}
+                                className="w-11 h-11 rounded-xl object-cover border border-gray-100"
+                                onError={(e) => { e.target.src = 'https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-product-1_large.png'; }} />
+                            </div>
+                            <span className="text-sm font-semibold text-gray-700 max-w-xs truncate">{product.productTitle}</span>
+                          </div>
+                        </td>
+                        {[
+                          { val: product.requests, cls: 'bg-blue-50 text-blue-600' },
+                          { val: product.sent, cls: 'bg-emerald-50 text-emerald-600' },
+                          { val: product.opened, cls: 'bg-violet-50 text-violet-600' },
+                          { val: product.clicked, cls: 'bg-amber-50 text-amber-600' },
+                          { val: product.purchased, cls: 'bg-rose-50 text-rose-600' },
+                        ].map((cell, ci) => (
+                          <td key={ci} className="px-6 py-4 text-center">
+                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${cell.cls}`}>{cell.val}</span>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 flex flex-col items-center text-center text-gray-300">
+                <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
+                  <Package size={28} />
+                </div>
+                <p className="text-sm font-bold text-gray-500">No product data yet</p>
+                <p className="text-xs text-gray-400 mt-1">Appears once customers request notifications</p>
+              </div>
+            )}
+          </div>
+
+          {/* Recent Subscribers Table */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden card-hover">
+            <div className="px-6 py-5 border-b border-gray-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-gray-800">Recent Subscribers</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Latest 10 notification requests</p>
+              </div>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold bg-blue-50 text-blue-500 px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-ping" />Live
+              </span>
+            </div>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] uppercase text-gray-400 font-bold tracking-widest bg-gray-50/60">
+                  <th className="px-6 py-3">Email</th>
+                  <th className="px-6 py-3">Product</th>
+                  <th className="px-6 py-3">Variant</th>
+                  <th className="px-6 py-3">Status</th>
+                  <th className="px-6 py-3">Date</th>
                 </tr>
-              )) : (
-                <tr>
-                  <td colSpan="5" className="px-8 py-10 text-center text-gray-400 italic text-sm">No recent activity found.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {subscribers.length > 0 ? subscribers.map((sub) => (
+                  <tr key={sub.id} className="table-row border-t border-gray-50 transition-colors">
+                    <td className="px-6 py-4 text-sm font-medium text-blue-600">{sub.email}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-gray-700 max-w-xs truncate">{sub.productTitle}</td>
+                    <td className="px-6 py-4">
+                      <span className="text-[10px] font-mono bg-gray-100 text-gray-500 px-2 py-0.5 rounded">{sub.variantTitle || '—'}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${sub.notified ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-500'}`}>
+                        {sub.notified ? '✓ Notified' : '⏳ Pending'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-400 font-medium">
+                      {new Date(sub.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan="5" className="px-6 py-12 text-center text-gray-300 text-sm italic">No subscribers found for this period.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
         </div>
       </div>
-    </div>
+    </>
   );
 }
